@@ -124,6 +124,37 @@ export default function ApplicationsTab({ restaurant }) {
             </div>
           )}
 
+          {/* ── Screening questionnaire answers ── */}
+          {restaurant?.screening_questions?.length > 0 && (() => {
+            const questions = restaurant.screening_questions;
+            const answers   = selected.answers || {};
+            return (
+              <div className="bg-[#161616] border border-white/5 rounded-2xl p-4">
+                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide mb-3">
+                  תשובות לשאלון סינון
+                </p>
+                <div className="space-y-3">
+                  {questions.map((q) => {
+                    const a = answers[q.id];
+                    const answered = a !== undefined && a !== null && a !== "";
+                    return (
+                      <div key={q.id} className="border-r-2 border-brand-500/40 pr-3">
+                        <p className="text-gray-400 text-[11px] mb-0.5">{q.label}</p>
+                        <p className={`text-sm font-semibold ${answered ? "text-white" : "text-gray-600 italic"}`}>
+                          {!answered
+                            ? "לא ענה/תה"
+                            : q.type === "boolean"
+                              ? (a ? "כן" : "לא")
+                              : Array.isArray(a) ? a.join(", ") : String(a)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* CTA buttons */}
           <div className="flex gap-2.5 pt-1">
             {p.phone && (

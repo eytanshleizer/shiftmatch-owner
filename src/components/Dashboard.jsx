@@ -1,30 +1,73 @@
 import { useState } from "react";
-import { Home, Users, MessageCircle, CreditCard } from "lucide-react";
+import { Home, Briefcase, Users, Settings as SettingsIcon } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import HomeTab         from "./HomeTab";
+import JobsTab         from "./JobsTab";
 import ApplicationsTab from "./ApplicationsTab";
-import WhatsAppTab     from "./WhatsAppTab";
+import SettingsTab     from "./SettingsTab";
 import PlansTab        from "./PlansTab";
+import TeamPage        from "./TeamPage";
+import QuestionnaireEditor from "./QuestionnaireEditor";
 
 const TABS = [
-  { id: "home",  label: "בית",        icon: Home },
-  { id: "apps",  label: "פניות",       icon: Users },
-  { id: "wa",    label: "AI",          icon: MessageCircle },
-  { id: "plans", label: "תוכניות",    icon: CreditCard },
+  { id: "home",     label: "בית",      icon: Home },
+  { id: "jobs",     label: "משרות",     icon: Briefcase },
+  { id: "apps",     label: "פניות",     icon: Users },
+  { id: "settings", label: "הגדרות",   icon: SettingsIcon },
 ];
 
-export default function Dashboard({ restaurant, user, onUpdate }) {
+export default function Dashboard({ restaurant, user, role, onUpdate }) {
   const [tab, setTab] = useState("home");
+  // Plans + Team are overlays launched from Settings instead of top-level tabs.
+  const [plansOpen, setPlansOpen]               = useState(false);
+  const [teamOpen,  setTeamOpen]                = useState(false);
+  const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
 
   return (
     <div className="h-full flex flex-col bg-[#0A0A0A]">
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
-        {tab === "home"  && <HomeTab  restaurant={restaurant} onUpdate={onUpdate} onSignOut={() => supabase.auth.signOut()} />}
-        {tab === "apps"  && <ApplicationsTab restaurant={restaurant} />}
-        {tab === "wa"    && <WhatsAppTab restaurant={restaurant} />}
-        {tab === "plans" && <PlansTab user={user} restaurant={restaurant} />}
+        {tab === "home"     && <HomeTab     restaurant={restaurant} onUpdate={onUpdate} onSignOut={() => supabase.auth.signOut()} />}
+        {tab === "jobs"     && <JobsTab     restaurant={restaurant} onUpdate={onUpdate} />}
+        {tab === "apps"     && <ApplicationsTab restaurant={restaurant} />}
+        {tab === "settings" && <SettingsTab restaurant={restaurant} onUpdate={onUpdate}
+          onSignOut={() => supabase.auth.signOut()}
+          onOpenPlans={() => setPlansOpen(true)}
+          onOpenTeam={() => setTeamOpen(true)}
+          onOpenQuestionnaire={() => setQuestionnaireOpen(true)}
+          role={role} />}
       </div>
+
+      {/* Plans overlay (full-screen) */}
+      {plansOpen && (
+        <div className="fixed inset-0 z-50 bg-[#0A0A0A] flex flex-col">
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <PlansTab user={user} restaurant={restaurant} />
+          </div>
+          <button onClick={() => setPlansOpen(false)}
+            className="absolute top-12 right-4 w-10 h-10 bg-white/10 backdrop-blur rounded-full flex items-center justify-center text-white active:bg-white/20 z-10">
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Team overlay (full-screen) */}
+      {teamOpen && (
+        <div className="fixed inset-0 z-50 bg-[#0A0A0A]">
+          <TeamPage restaurant={restaurant} user={user} onBack={() => setTeamOpen(false)} />
+        </div>
+      )}
+
+      {/* Questionnaire editor overlay (full-screen) */}
+      {questionnaireOpen && (
+        <div className="fixed inset-0 z-50 bg-[#0A0A0A]">
+          <QuestionnaireEditor
+            restaurant={restaurant}
+            onBack={() => setQuestionnaireOpen(false)}
+            onSaved={(qs) => onUpdate?.({ ...restaurant, screening_questions: qs })}
+          />
+        </div>
+      )}
 
       {/* Bottom nav */}
       <div className="flex-shrink-0 safe-bottom"
