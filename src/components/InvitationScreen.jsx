@@ -13,21 +13,24 @@ export default function InvitationScreen({ user, invitation, onAccepted, onSignO
 
   const accept = async () => {
     setWorking(true); setErr("");
-    // Insert a pending membership.  Self-insert is allowed by the RLS policy
-    // (rm_self_join_insert: user_id = auth.uid()).
+    // The owner already chose this user's role when sending the invite, so
+    // accepting it makes them an APPROVED member immediately — no separate
+    // owner-side approval step.
     const { error: insErr } = await supabase.from("restaurant_members").insert({
       restaurant_id: invitation.restaurant_id,
       user_id: user.id,
       role: invitation.role,
-      status: "pending",
+      status: "approved",
       invited_by: invitation.invited_by,
+      approved_by: invitation.invited_by,
+      approved_at: new Date().toISOString(),
     });
     if (insErr) {
       setErr(insErr.message);
       setWorking(false);
       return;
     }
-    // Mark invitation as accepted.
+    // Mark invitation as accepted so it disappears from the owner's "pending invites" list.
     await supabase.from("restaurant_invitations")
       .update({ accepted_at: new Date().toISOString() })
       .eq("id", invitation.id);
@@ -52,7 +55,7 @@ export default function InvitationScreen({ user, invitation, onAccepted, onSignO
 
       <h1 className="text-white font-black text-2xl mb-2">הוזמנת לצוות</h1>
       <p className="text-gray-400 text-sm leading-relaxed max-w-xs mb-6">
-        קיבלת הזמנה להצטרף כ<b className="text-white">{ROLE_LABELS[invitation.role] || invitation.role}</b> במסעדה:
+        בעל/ת המסעדה הזמין/ה אותך כ<b className="text-white">{ROLE_LABELS[invitation.role] || invitation.role}</b> במסעדה:
       </p>
 
       <div className="bg-[#161616] border border-white/10 rounded-2xl p-5 mb-6 w-full max-w-sm flex items-center gap-3">

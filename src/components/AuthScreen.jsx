@@ -137,8 +137,9 @@ export default function AuthScreen() {
       <div className="flex flex-col gap-3 flex-1">
         {mode === "register" && (
           <>
-            <Field icon="👤" placeholder="השם המלא שלך"          value={name}           onChange={setName} />
-            <Field icon="🏪" placeholder="שם המסעדה"              value={restaurantName} onChange={setRestaurantName} />
+            <Field icon="👤" placeholder="השם המלא שלך" value={name} onChange={setName} />
+            <Field icon="🏪" placeholder="שם המסעדה (השאר/י ריק אם הוזמנת)"
+              value={restaurantName} onChange={setRestaurantName} />
           </>
         )}
 
@@ -171,7 +172,7 @@ export default function AuthScreen() {
           disabled={
             loading ||
             !email ||
-            (mode === "register" && (password.length < MIN_PW || !name.trim() || !restaurantName.trim())) ||
+            (mode === "register" && (password.length < MIN_PW || !name.trim())) ||
             (mode === "login"    && password.length < MIN_PW)
           }
           className="w-full bg-brand-500 text-white font-black py-4 rounded-2xl text-base mt-2 active:bg-brand-600 disabled:opacity-40 disabled:bg-white/10 flex items-center justify-center gap-2 shadow-xl shadow-brand-500/30">

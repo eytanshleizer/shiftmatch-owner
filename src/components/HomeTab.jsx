@@ -95,10 +95,7 @@ export default function HomeTab({ restaurant: r, onUpdate, onSignOut }) {
               {r?.city && <p className="text-gray-500 text-xs">{r.city}</p>}
             </div>
           </div>
-          <button onClick={onSignOut}
-            className="w-9 h-9 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center active:bg-white/10">
-            <LogOut size={15} className="text-gray-500" />
-          </button>
+          {/* Sign-out moved to the persistent user pill in the top-right of Dashboard */}
         </div>
       </div>
 
@@ -124,7 +121,7 @@ export default function HomeTab({ restaurant: r, onUpdate, onSignOut }) {
                 </p>
               </div>
               <p className={`text-2xl font-black ${r?.active ? "text-white" : "text-gray-300"}`}>
-                {r?.active ? "מגייסים עכשיו ✓" : "לחץ להפעלה"}
+                {r?.active ? "מגייסים עכשיו ✓" : "לחצ/י להפעלה"}
               </p>
               {r?.active && (
                 <p className="text-white/60 text-xs mt-1">המודעה שלך גלויה למועמדים</p>

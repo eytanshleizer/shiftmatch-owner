@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Home, Briefcase, Users, Settings as SettingsIcon } from "lucide-react";
+import { Home, Briefcase, Users, Settings as SettingsIcon, LogOut } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { ROLE_LABEL } from "../lib/permissions";
 import HomeTab         from "./HomeTab";
 import JobsTab         from "./JobsTab";
 import ApplicationsTab from "./ApplicationsTab";
@@ -23,8 +24,19 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
   const [teamOpen,  setTeamOpen]                = useState(false);
   const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
 
+  // Logged-in user name + initials for the persistent top-right pill.
+  const fullName  = (user?.user_metadata?.name || user?.email || "").trim();
+  const firstName = fullName.split(/\s+/)[0] || "משתמש";
+  const initials  = fullName.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+
   return (
     <div className="h-full flex flex-col bg-[#0A0A0A]">
+      {/* Persistent top-right user pill (across all tabs).  Click → sign out. */}
+      <div className="absolute z-30" style={{ top: "max(env(safe-area-inset-top, 0px), 12px)", insetInlineStart: "12px" }}>
+        <UserPill firstName={firstName} initials={initials} role={role}
+          onSignOut={() => supabase.auth.signOut()} />
+      </div>
+
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
         {tab === "home"     && <HomeTab     restaurant={restaurant} onUpdate={onUpdate} onSignOut={() => supabase.auth.signOut()} />}
@@ -101,6 +113,43 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── User pill ──
+// Shown in the top-right (RTL → inline-start) of every tab.  Tapping
+// opens a tiny menu with the user's full name + sign-out.
+function UserPill({ firstName, initials, role, onSignOut }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 bg-white/10 backdrop-blur-xl border border-white/10 rounded-full pr-1 pl-3 py-1 active:bg-white/15 shadow-lg shadow-black/40">
+        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center text-white font-black text-[11px]">
+          {initials}
+        </div>
+        <span className="text-white text-xs font-bold leading-none">{firstName}</span>
+      </button>
+
+      {open && (
+        <>
+          {/* click-away */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute mt-2 z-20 bg-[#161616] border border-white/10 rounded-2xl p-3 min-w-[180px] shadow-2xl shadow-black/60"
+               style={{ insetInlineStart: 0 }}>
+            <p className="text-white text-sm font-bold truncate">{firstName}</p>
+            {role && (
+              <p className="text-gray-500 text-[11px] mt-0.5">{ROLE_LABEL[role] || role}</p>
+            )}
+            <div className="border-t border-white/5 my-2" />
+            <button onClick={onSignOut}
+              className="w-full flex items-center gap-2 text-red-400 text-xs font-semibold py-2 px-2 rounded-lg active:bg-red-500/10">
+              <LogOut size={13} />התנתק/י
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   Phone, Eye, MoreVertical, Loader2, Mail, Clock, Trash2
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { can } from "../lib/permissions";
 
 // Role catalog — order matters (used for sorting + role picker).
 const ROLES = {
@@ -33,7 +34,8 @@ export default function TeamPage({ restaurant, user, onBack }) {
   // Find caller's role to decide what UI to show.
   const myMembership = members.find((m) => m.user_id === user?.id);
   const myRole = myMembership?.role || "viewer";
-  const canManage = myRole === "owner" || myRole === "admin";
+  // OWNER ONLY can invite/approve/remove/change roles per user override.
+  const canManage = can(myRole, "invite");
 
   const load = async () => {
     setLoading(true);
@@ -150,7 +152,7 @@ export default function TeamPage({ restaurant, user, onBack }) {
         {canManage && (
           <button onClick={() => setShowInvite(true)}
             className="bg-brand-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl active:bg-brand-600 flex items-center gap-1.5 shadow-lg shadow-brand-500/30">
-            <UserPlus size={14} />הזמן
+            <UserPlus size={14} />הזמנה
           </button>
         )}
       </div>
@@ -233,7 +235,7 @@ export default function TeamPage({ restaurant, user, onBack }) {
               <div className="text-center py-16">
                 <div className="w-20 h-20 mx-auto rounded-3xl bg-white/5 flex items-center justify-center text-4xl mb-4">👥</div>
                 <p className="text-white font-bold">אין חברי צוות</p>
-                <p className="text-gray-500 text-xs mt-1">הזמן את הצוות שלך לעבוד יחד</p>
+                <p className="text-gray-500 text-xs mt-1">הזמן/הזמיני את הצוות שלך לעבוד יחד</p>
               </div>
             )}
           </>
@@ -245,6 +247,7 @@ export default function TeamPage({ restaurant, user, onBack }) {
         <InviteModal
           restaurant={restaurant}
           inviterId={user.id}
+          inviterEmail={user.email}
           onClose={() => setShowInvite(false)}
           onInvited={() => { setShowInvite(false); load(); }}
         />
@@ -314,7 +317,7 @@ function MemberCard({ m, isMe, canManage, onApprove, onReject, onAction }) {
 }
 
 // ── Invite modal ──
-function InviteModal({ restaurant, inviterId, onClose, onInvited }) {
+function InviteModal({ restaurant, inviterEmail, inviterId, onClose, onInvited }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("manager");
   const [saving, setSaving] = useState(false);
@@ -323,7 +326,32 @@ function InviteModal({ restaurant, inviterId, onClose, onInvited }) {
   const send = async () => {
     setErr("");
     const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail.includes("@")) { setErr("אמייל לא תקין"); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setErr("אמייל לא תקין");
+      return;
+    }
+    if (cleanEmail === (inviterEmail || "").toLowerCase()) {
+      setErr("לא ניתן להזמין את עצמך — את/ה כבר הבעל/ת המסעדה");
+      return;
+    }
+    // Block inviting someone who already has a member row.
+    const { data: existing } = await supabase
+      .from("restaurant_members")
+      .select("user_id")
+      .eq("restaurant_id", restaurant.id);
+    // Need to check by email — fetch the profiles
+    if (existing?.length) {
+      const userIds = existing.map((m) => m.user_id);
+      const { data: profs } = await supabase
+        .from("profiles")
+        .select("id, email")
+        .in("id", userIds);
+      const alreadyMember = (profs || []).some((p) => (p.email || "").toLowerCase() === cleanEmail);
+      if (alreadyMember) {
+        setErr("המשתמש/ת כבר חבר/ה בצוות המסעדה");
+        return;
+      }
+    }
     setSaving(true);
     const { error } = await supabase.from("restaurant_invitations").insert({
       restaurant_id: restaurant.id,
@@ -346,7 +374,7 @@ function InviteModal({ restaurant, inviterId, onClose, onInvited }) {
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-white font-black text-lg flex items-center gap-2">
-            <UserPlus size={18} className="text-brand-400" />הזמן חבר צוות
+            <UserPlus size={18} className="text-brand-400" />הזמנת חבר/ת צוות
           </h3>
           <button onClick={onClose}
             className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-gray-400">
@@ -419,14 +447,14 @@ function ActionSheet({ member, onClose, onChangeRole, onRemove }) {
             </button>
             <button onClick={onRemove}
               className="w-full py-4 text-red-400 font-semibold text-right px-3 active:bg-red-500/10 flex items-center gap-2">
-              <Trash2 size={14} />הסר מהמסעדה
+              <Trash2 size={14} />הסרה מהמסעדה
             </button>
             <button onClick={onClose}
               className="w-full mt-2 py-3 text-gray-500 font-semibold">ביטול</button>
           </>
         ) : (
           <>
-            <p className="text-white font-bold text-center py-3 border-b border-white/5 mb-2">בחר תפקיד חדש</p>
+            <p className="text-white font-bold text-center py-3 border-b border-white/5 mb-2">בחירת תפקיד חדש</p>
             {["admin", "manager", "recruiter", "viewer"].map((r) => {
               const meta = ROLES[r];
               const on = member.role === r;

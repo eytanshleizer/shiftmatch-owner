@@ -23,7 +23,7 @@ const POSITIONS = [
 
 // Mandatory-shift options.  Keys saved to DB; labels shown to user.
 const MANDATORY_SHIFTS = [
-  { key: "weekend",       label: 'סופ"שות',           icon: PartyPopper },
+  { key: "weekend",       label: "סופי שבוע",          icon: PartyPopper },
   { key: "nights",        label: "לילות",              icon: Moon },
   { key: "holidays",      label: "חגים",               icon: Calendar },
   { key: "early_morning", label: "בוקר מוקדם",         icon: Sun },
@@ -266,7 +266,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
             <button onClick={() => setShowAdd(true)}
               disabled={!availableToAdd.length}
               className="text-brand-400 text-xs font-bold flex items-center gap-1 active:opacity-60 disabled:opacity-30">
-              <Plus size={14} />הוסף משרה
+              <Plus size={14} />הוספת משרה
             </button>
           </div>
 
@@ -274,7 +274,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
             <div className="bg-[#161616] border border-white/5 rounded-2xl p-8 text-center">
               <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center text-3xl mx-auto mb-3">💼</div>
               <p className="text-white font-bold text-sm">אין משרות עדיין</p>
-              <p className="text-gray-500 text-xs mt-1">לחץ "הוסף משרה" כדי להתחיל</p>
+              <p className="text-gray-500 text-xs mt-1">לחצ/י "+ הוספת משרה" כדי להתחיל</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -347,7 +347,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                         {/* Remove */}
                         <button onClick={() => removePosition(pos)}
                           className="w-full bg-red-500/10 border border-red-500/30 text-red-400 font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:bg-red-500/20">
-                          <Trash2 size={13} />הסר משרה
+                          <Trash2 size={13} />הסרת משרה
                         </button>
                       </div>
                     )}
@@ -366,7 +366,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
           <div className="bg-[#161616] border-t border-white/10 rounded-t-3xl w-full max-w-md p-6 pb-8 max-h-[80vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-black text-lg">הוסף משרה</h3>
+              <h3 className="text-white font-black text-lg">הוספת משרה</h3>
               <button onClick={() => setShowAdd(false)}
                 className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-gray-400">
                 <X size={16} />

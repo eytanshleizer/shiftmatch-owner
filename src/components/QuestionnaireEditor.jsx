@@ -14,7 +14,7 @@ const QUESTION_LIBRARY = [
     label: "כמה שנות ניסיון יש לך בתפקיד?",
     options: ["0", "1–2", "3–5", "5+"], applies_to: "any" },
   { library_key: "available_weekends", type: "boolean",
-    label: "זמין/ה לעבוד בסופ\"שות?", applies_to: "any" },
+    label: "זמין/ה לעבוד בסופי שבוע?", applies_to: "any" },
   { library_key: "available_nights",   type: "boolean",
     label: "זמין/ה לעבוד במשמרות לילה?", applies_to: "any" },
   { library_key: "shifts_per_week",    type: "select",

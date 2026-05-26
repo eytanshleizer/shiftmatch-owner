@@ -12,7 +12,9 @@ const TYPES = [
   "בשרייה", "פאב", "קפה", "ברסרי", "פיצה", "המבורגרים", "מזרחי", "ישראלי"
 ];
 
-const SHIFTS = ["בוקר", "צהריים", "ערב", "לילה", "סופש"];
+// Keep this list IN SYNC with ChatOnboarding's SHIFTS — the values are stored
+// verbatim in `restaurants.shifts`, so any mismatch would dedupe-break filtering.
+const SHIFTS = ["בוקר", "צהריים", "ערב", "לילה", "סופ\"ש"];
 
 const BENEFITS = [
   "טיפים", "טיפים גבוהים", "ארוחת עובד", "נסיעות", "מונית הביתה",
@@ -227,7 +229,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
             <button onClick={() => setShowTypePicker(true)}
               className={`${inputCls} text-right flex items-center justify-between`}>
               <span className={form.type ? "text-white" : "text-gray-500"}>
-                {form.type || "בחר סוג מטבח"}
+                {form.type || "בחירת סוג מטבח"}
               </span>
               <span className="text-gray-500">›</span>
             </button>
@@ -301,7 +303,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
 
         {/* ── Shifts ── */}
         <Section icon={Clock} title="משמרות זמינות">
-          <p className="text-gray-500 text-xs mb-3">בחר/י את כל המשמרות שבהן יש משרות</p>
+          <p className="text-gray-500 text-xs mb-3">בחר/בחרי את כל המשמרות שבהן יש משרות</p>
           <div className="flex flex-wrap gap-2">
             {SHIFTS.map((s) => {
               const on = form.shifts.includes(s);
@@ -522,7 +524,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
           <div className="bg-[#161616] border-t border-white/10 rounded-t-3xl w-full max-w-md p-6 pb-8 max-h-[80vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-black text-lg">בחר סוג מטבח</h3>
+              <h3 className="text-white font-black text-lg">בחירת סוג מטבח</h3>
               <button onClick={() => setShowTypePicker(false)}
                 className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-gray-400">
                 <X size={16} />

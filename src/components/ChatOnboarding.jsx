@@ -143,12 +143,12 @@ export default function ChatOnboarding({ user, onDone }) {
       if (presetRestaurantName) {
         // Restaurant name already provided at signup — skip to type.
         data.current.name = presetRestaurantName;
-        await addBot(<>בוא נקים את <b className="text-white">{presetRestaurantName}</b> תוך 2 דקות 🚀</>, 1100);
+        await addBot(<>בואו נקים את <b className="text-white">{presetRestaurantName}</b> תוך 2 דקות 🚀</>, 1100);
         await addBot("איזה סוג מסעדה זה?", 900);
         await addBot("לדוגמה: סושי, איטלקי, מסעדת שף, בית קפה, בר...", 1100);
         setStep("type");
       } else {
-        await addBot("בוא נקים את המסעדה שלך תוך 2 דקות 🚀", 1100);
+        await addBot("בואו נקים את המסעדה שלך תוך 2 דקות 🚀", 1100);
         await addBot("איך קוראים למסעדה שלך?", 1000);
         setStep("name");
       }
@@ -321,7 +321,7 @@ export default function ChatOnboarding({ user, onDone }) {
         value.forEach(p => initialCounts[p] = 1);
         data.current.positionCounts = initialCounts;
         setStepHistory(h => [...h, "positions"]);
-        await addBot("כמה עובדים אתה צריך מכל תפקיד?", 700);
+        await addBot("כמה עובדים את/ה צריך/ה מכל תפקיד?", 700);
         setStep("counts");
         break;
 
@@ -374,7 +374,7 @@ export default function ChatOnboarding({ user, onDone }) {
         data.current.shifts = value;
         addUser(value.join(" · "));
         setStepHistory(h => [...h, "shifts"]);
-        await addBot("מה ההטבות שאתה מציע לעובדים? (אופציונלי)", 700);
+        await addBot("מה ההטבות שאת/ה מציע/ה לעובדים? (אופציונלי)", 700);
         setStep("benefits");
         break;
 
