@@ -24,25 +24,20 @@ const VIBES = [
   { id: "fast",      emoji: "🍔", label: "מזון מהיר" },
 ];
 
-// All steps in order
+// Simplified manual flow — no AI guessing.  Owner fills every field directly.
 const FLOW = [
   "greet",         // bot greeting
-  "name",          // restaurant name input
-  "chain",         // is it a chain?
-  "location",      // city / location
-  "searching",     // AI is searching
-  "pickCandidate", // pick from multiple candidates
-  "confirm",       // confirm AI findings
-  "vibe",          // restaurant vibe / type
+  "name",          // restaurant name
+  "type",          // restaurant type (FREE TEXT: "סושי", "איטלקי", "מסעדת שף"...)
+  "city",          // city
+  "area",          // neighborhood / area (optional)
   "positions",     // which positions needed
   "counts",        // how many of each
-  "salary",        // hourly wage
-  "experience",    // experience required
+  "salary",        // hourly wage per position
   "shifts",        // shifts available
-  "benefits",      // benefits offered
-  "requirements",  // requirements
+  "benefits",      // benefits offered (optional)
   "urgent",        // urgent hiring?
-  "whatsapp",      // recruitment WhatsApp number (the one waiters contact)
+  "whatsapp",      // recruitment WhatsApp number
   "saving",        // saving to DB
   "done",          // completed
 ];
@@ -269,84 +264,40 @@ export default function ChatOnboarding({ user, onDone }) {
         addUser(value);
         setInput("");
         setStepHistory(h => [...h, "name"]);
-        await addBot("נחמד! זו רשת או מסעדה עצמאית?", 700);
-        setStep("chain");
+        await addBot("נחמד! איזה סוג מסעדה זה?", 600);
+        await addBot("לדוגמה: סושי, איטלקי, מסעדת שף, בית קפה, בר...", 900);
+        setStep("type");
         break;
 
-      case "chain":
-        data.current.isChain = value;
-        addUser(value ? "זו רשת מסעדות" : "מסעדה עצמאית");
-        setStepHistory(h => [...h, "chain"]);
-        if (value) {
-          await addBot("מעולה! איפה ממוקם הסניף הספציפי?", 700);
-        } else {
-          await addBot("מעולה! באיזו עיר ממוקמת המסעדה?", 700);
-        }
-        setStep("location");
-        break;
-
-      case "location":
-        data.current.city = value;
-        if (data.current.isChain) data.current.branchLocation = value;
+      case "type":
+        data.current.type = value;
         addUser(value);
         setInput("");
-        setStepHistory(h => [...h, "location"]);
-        setStep("searching");
-        await researchRestaurant();
+        setStepHistory(h => [...h, "type"]);
+        await addBot("יופי! באיזו עיר?", 700);
+        setStep("city");
         break;
 
-      case "pickCandidate":
-        if (value === "retry") {
-          addUser("🔄 חיפוש מחדש");
-          setStepHistory(h => [...h, "pickCandidate"]);
-          setStep("location"); // go back to location to try again
-          await addBot("ספר/י לי שוב את העיר או האזור — הפעם בצורה מדויקת יותר 📍", 600);
-        } else if (value === "manual") {
-          addUser("אמשיך ידנית");
-          setStepHistory(h => [...h, "pickCandidate"]);
-          await addBot("אין בעיה — נמשיך ונמלא ביחד 💪", 600);
-          setStep("vibe");
-          await addBot("איך תגדיר/י את המסעדה?", 700);
-        } else {
-          // value is a candidate object
-          applyCandidate(value);
-          addUser(<>✓ {value.name}{value.address ? ` · ${value.address}` : ""}</>);
-          setStepHistory(h => [...h, "pickCandidate"]);
-          await addBot(
-            <div className="space-y-2">
-              <p>מעולה! הנה כל המידע שמצאתי:</p>
-              <ResearchCard d={data.current} found={value} />
-            </div>,
-            500
-          );
-          await addBot("האם הפרטים נכונים?", 600);
-          setStep("confirm");
-        }
+      case "city":
+        data.current.city = value;
+        addUser(value);
+        setInput("");
+        setStepHistory(h => [...h, "city"]);
+        await addBot("איזה אזור / שכונה? (לא חובה — אפשר לדלג)", 700);
+        setStep("area");
         break;
 
-      case "confirm":
-        if (value === "edit") {
-          addUser("אני אתקן");
+      case "area":
+        // "skip" comes from the skip button; otherwise free text
+        if (value && value !== "__skip__") {
+          data.current.area = value;
+          addUser(value);
         } else {
-          addUser("✓ הכל נכון");
+          addUser("דלגתי");
         }
-        setStepHistory(h => [...h, "confirm"]);
-        await addBot("מצוין! בוא נמשיך לפרטים החשובים 🎯", 800);
-        if (!data.current.vibe || data.current.vibe === "casual") {
-          await addBot("איך תגדיר/י את המסעדה?", 700);
-          setStep("vibe");
-        } else {
-          await addBot("איזה תפקידים את/ה צריך לגייס?", 700);
-          setStep("positions");
-        }
-        break;
-
-      case "vibe":
-        data.current.vibe = value.id;
-        if (!data.current.type) data.current.type = value.label;
-        addUser(<><span>{value.emoji}</span> {value.label}</>);
-        setStepHistory(h => [...h, "vibe"]);
-        await addBot("איזה תפקידים את/ה צריך לגייס?", 800);
+        setInput("");
+        setStepHistory(h => [...h, "area"]);
+        await addBot("איזה תפקידים את/ה צריך לגייס?", 700);
         setStep("positions");
         break;
 
@@ -402,14 +353,6 @@ export default function ChatOnboarding({ user, onDone }) {
           .map(([p, s]) => `${p}: ₪${s}`).join(" · ");
         addUser(salaryLine);
         setStepHistory(h => [...h, "salary"]);
-        await addBot("מה רמת הניסיון שאתה מחפש במועמדים?", 700);
-        setStep("experience");
-        break;
-
-      case "experience":
-        data.current.experience = value;
-        addUser(value);
-        setStepHistory(h => [...h, "experience"]);
         await addBot("אילו משמרות העובדים יצטרכו לכסות?", 700);
         setStep("shifts");
         break;
@@ -426,14 +369,6 @@ export default function ChatOnboarding({ user, onDone }) {
         data.current.benefits = value;
         addUser(value.length ? value.join(" · ") : "ללא הטבות מיוחדות");
         setStepHistory(h => [...h, "benefits"]);
-        await addBot("יש דרישות ספציפיות מהמועמדים?", 700);
-        setStep("requirements");
-        break;
-
-      case "requirements":
-        data.current.requirements = value;
-        addUser(value.length ? value.join(" · ") : "אין דרישות מיוחדות");
-        setStepHistory(h => [...h, "requirements"]);
         await addBot("האם זה גיוס דחוף? 🚨", 700);
         setStep("urgent");
         break;
@@ -568,83 +503,27 @@ export default function ChatOnboarding({ user, onDone }) {
         onSend={() => input.trim() && advance("name", input.trim())} />
     );
 
-    if (step === "chain") return (
-      <ButtonRow>
-        <PrimaryBtn onClick={() => advance("chain", false)}>🏠 מסעדה עצמאית</PrimaryBtn>
-        <SecondaryBtn onClick={() => advance("chain", true)}>🔗 רשת</SecondaryBtn>
-      </ButtonRow>
-    );
-
-    if (step === "location") return (
+    if (step === "type") return (
       <TextInput value={input} onChange={setInput}
-        placeholder={data.current.isChain ? "כתובת/אזור הסניף..." : "עיר..."}
-        onSend={() => input.trim() && advance("location", input.trim())} />
+        placeholder='סושי, איטלקי, מסעדת שף...'
+        onSend={() => input.trim() && advance("type", input.trim())} />
     );
 
-    if (step === "pickCandidate") {
-      const candidates = data.current.candidates || [];
-      if (candidates.length === 0) {
-        return (
-          <div className="space-y-2">
-            <button onClick={() => advance("pickCandidate", "retry")}
-              className="w-full bg-brand-500 text-white font-bold py-3.5 rounded-2xl text-sm active:bg-brand-600 flex items-center justify-center gap-2 shadow-lg shadow-brand-500/30">
-              🔄 חפש שוב עם פרטים נוספים
-            </button>
-            <button onClick={() => advance("pickCandidate", "manual")}
-              className="w-full bg-white/10 text-white font-bold py-3.5 rounded-2xl text-sm active:bg-white/20">
-              ✏️ אמלא ידנית
-            </button>
-          </div>
-        );
-      }
-      return (
-        <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-          {candidates.map((c, i) => (
-            <button key={i} onClick={() => advance("pickCandidate", c)}
-              className="w-full text-right bg-white/5 hover:bg-white/8 active:bg-white/12 rounded-2xl p-3.5 border border-white/5 transition-colors">
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <p className="text-white font-bold text-sm">{c.name}</p>
-                {c.price_range && <span className="text-brand-400 text-xs font-semibold flex-shrink-0">{c.price_range}</span>}
-              </div>
-              {c.address && (
-                <p className="text-gray-400 text-xs flex items-center gap-1 mb-1">
-                  <MapPin size={10} />{c.address}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-1.5 mt-1.5">
-                {c.type && <span className="text-[10px] bg-brand-500/15 text-brand-400 px-2 py-0.5 rounded-full">{c.type}</span>}
-                {c.cuisine && <span className="text-[10px] bg-white/8 text-gray-300 px-2 py-0.5 rounded-full">{c.cuisine}</span>}
-              </div>
-            </button>
-          ))}
-          <button onClick={() => advance("pickCandidate", "retry")}
-            className="w-full bg-white/5 text-gray-400 font-medium py-3 rounded-2xl text-xs active:bg-white/10 border border-white/5 mt-2">
-            🤔 אף אחת מהאופציות לא נכונה — חפש שוב
-          </button>
-          <button onClick={() => advance("pickCandidate", "manual")}
-            className="w-full text-gray-500 text-xs py-1.5">
-            או המשך ידנית →
-          </button>
-        </div>
-      );
-    }
-
-    if (step === "confirm") return (
-      <ButtonRow>
-        <PrimaryBtn onClick={() => advance("confirm", "ok")}>✓ הכל נכון</PrimaryBtn>
-        <SecondaryBtn onClick={() => advance("confirm", "edit")}>✏️ אתקן בעצמי</SecondaryBtn>
-      </ButtonRow>
+    if (step === "city") return (
+      <TextInput value={input} onChange={setInput}
+        placeholder="עיר..."
+        onSend={() => input.trim() && advance("city", input.trim())} />
     );
 
-    if (step === "vibe") return (
+    if (step === "area") return (
       <div className="space-y-2">
-        {VIBES.map(v => (
-          <button key={v.id} onClick={() => advance("vibe", v)}
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white/5 active:bg-white/10 transition-colors">
-            <span className="text-xl">{v.emoji}</span>
-            <span className="text-white font-medium text-sm">{v.label}</span>
-          </button>
-        ))}
+        <TextInput value={input} onChange={setInput}
+          placeholder="שכונה / אזור (אופציונלי)"
+          onSend={() => input.trim() && advance("area", input.trim())} />
+        <button onClick={() => advance("area", "__skip__")}
+          className="w-full text-gray-500 text-xs py-2 active:text-gray-300">
+          דלג ←
+        </button>
       </div>
     );
 
@@ -661,33 +540,12 @@ export default function ChatOnboarding({ user, onDone }) {
       />
     );
 
-    if (step === "experience") return (
-      <div className="space-y-2">
-        {[
-          { id: "ללא ניסיון",       emoji: "🌱" },
-          { id: "עד שנה",          emoji: "🌿" },
-          { id: "1-3 שנים",        emoji: "🌳" },
-          { id: "3+ שנות ניסיון",  emoji: "🏆" },
-        ].map(e => (
-          <button key={e.id} onClick={() => advance("experience", e.id)}
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white/5 active:bg-white/10">
-            <span className="text-xl">{e.emoji}</span>
-            <span className="text-white font-medium text-sm">{e.id}</span>
-          </button>
-        ))}
-      </div>
-    );
-
     if (step === "shifts") return (
       <MultiSelectChips options={SHIFTS.map(s => ({id: s, emoji: "🕐"}))} onDone={v => advance("shifts", v)} minOne />
     );
 
     if (step === "benefits") return (
       <MultiSelectChips options={BENEFITS.map(b => ({id: b, emoji: "✓"}))} onDone={v => advance("benefits", v)} />
-    );
-
-    if (step === "requirements") return (
-      <MultiSelectChips options={REQUIREMENTS.map(r => ({id: r, emoji: "•"}))} onDone={v => advance("requirements", v)} />
     );
 
     if (step === "urgent") return (
