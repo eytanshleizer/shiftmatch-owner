@@ -1,13 +1,22 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
-import { Loader2, ArrowLeft, ChevronLeft, Eye, EyeOff } from "lucide-react";
+import { Loader2, ChevronLeft, Eye, EyeOff, AlertTriangle } from "lucide-react";
 import { logEvent } from "../lib/tracking";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AuthScreen — Fireberry-inspired light-theme entry.
-// Layout: white background, big brand mark, single focused question/field per
-// view, full-width dark CTA at the bottom, RTL Hebrew throughout.
-// Three views: landing → login | register | forgot.
+// AuthScreen — registration + login + forgot password.
+//
+// Registration flow now follows SEPARATION_SPEC.md:
+//   1. Collect: full name, restaurant name, city, email, password (≥8).
+//   2. Tap "המשך" → POST /api/verify-restaurant to check:
+//        a. already_taken — another owner has that name+city.  Block.
+//        b. exists_on_web === false (only when Google Places key is configured)
+//           → soft warning, allow "yes, continue".
+//   3. If clear, call supabase.auth.signUp() and persist the suggested
+//      restaurant name + city onto profiles so the wizard can pre-fill.
+//
+// The actual restaurant row is NOT created here.  It only gets created
+// after the user completes WizardOnboarding.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MIN_PW = 8;
@@ -18,29 +27,79 @@ export default function AuthScreen() {
   const [password, setPassword]       = useState("");
   const [name, setName]               = useState("");
   const [restaurantName, setRestName] = useState("");
+  const [city, setCity]               = useState("");
   const [showPw, setShowPw]           = useState(false);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
   const [resetSent, setResetSent]     = useState(false);
 
+  // For the "not found on the web" soft warning case.
+  const [softWarning, setSoftWarning] = useState(null);  // { name, city } once acknowledged
+  const [pendingVerify, setPendingVerify] = useState(false);
+
   const submit = async () => {
     setError(""); setLoading(true);
     try {
       if (mode === "register") {
-        if (password.length < MIN_PW) throw new Error("PW_SHORT");
+        if (password.length < MIN_PW)   throw new Error("PW_SHORT");
+        if (!name.trim())               throw new Error("NAME_REQ");
+        if (!restaurantName.trim())     throw new Error("REST_REQ");
+        if (!city.trim())               throw new Error("CITY_REQ");
+
+        // Step 1: verify the proposed restaurant unless user already
+        // ack'd the "not found on the web" warning for these exact values.
+        const alreadyAck = softWarning &&
+          softWarning.name === restaurantName.trim() &&
+          softWarning.city === city.trim();
+
+        if (!alreadyAck) {
+          setPendingVerify(true);
+          const r = await fetch("/api/verify-restaurant", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: restaurantName, city }),
+          });
+          const v = await r.json().catch(() => ({}));
+          setPendingVerify(false);
+
+          if (v.already_taken) {
+            throw new Error("RESTAURANT_TAKEN");
+          }
+          // Only block on exists_on_web=false when Places actually answered
+          // (verification_source === "google_places").  If we couldn't check
+          // (no key / network), skip the soft warning silently.
+          if (v.exists_on_web === false && v.verification_source === "google_places") {
+            // Soft warning — user can confirm and retry.
+            setSoftWarning({ name: restaurantName.trim(), city: city.trim() });
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Step 2: create the auth user + profile.
         const { data: authData, error: e } = await supabase.auth.signUp({
           email, password,
-          options: { data: { name, restaurant_name: restaurantName, role: "restaurant" } },
+          options: {
+            data: {
+              name,
+              restaurant_name: restaurantName,
+              restaurant_city: city,
+              role: "restaurant",
+            },
+          },
         });
         if (e) throw e;
         if (authData.user) {
           await supabase.from("profiles").upsert({
             id: authData.user.id,
-            name, email, role: "restaurant", onboarded: false,
+            name, email, role: "restaurant",
+            onboarded: false,
+            suggested_restaurant_name: restaurantName,
+            suggested_city: city,
           });
           logEvent("restaurant", "signup", {
             user_id: authData.user.id, owner_name: name,
-            restaurant_name: restaurantName, email,
+            restaurant_name: restaurantName, restaurant_city: city, email,
           });
         }
       } else if (mode === "login") {
@@ -55,19 +114,24 @@ export default function AuthScreen() {
         setResetSent(true);
       }
     } catch (e) {
+      const msg = e?.message || "";
       setError(
-        e.message === "PW_SHORT" ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
-        e.message === "Invalid login credentials" ? "אימייל או סיסמה שגויים" :
-        e.message === "User already registered" ? "המשתמש כבר רשום — התחבר/י" :
-        /Password/i.test(e.message || "") ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
-        e.message
+        msg === "PW_SHORT"          ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
+        msg === "NAME_REQ"          ? "חסר שם מלא" :
+        msg === "REST_REQ"          ? "חסר שם המסעדה" :
+        msg === "CITY_REQ"          ? "חסר שם העיר" :
+        msg === "RESTAURANT_TAKEN"  ? "מסעדה בשם הזה בעיר הזו כבר רשומה. אם זו המסעדה שלך, פנה/י לתמיכה." :
+        msg === "Invalid login credentials" ? "אימייל או סיסמה שגויים" :
+        msg === "User already registered"   ? "המשתמש כבר רשום — התחבר/י" :
+        /Password/i.test(msg) ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
+        msg || "שגיאה — נסה שוב"
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // ── Landing view ──────────────────────────────────────────────────────
+  // ── Landing ────────────────────────────────────────────────────────
   if (!mode) {
     return (
       <Frame>
@@ -80,7 +144,6 @@ export default function AuthScreen() {
             פלטפורמת הגיוס הראשונה בישראל שמיועדת אך ורק למסעדות.
           </p>
 
-          {/* Three quick value bullets in a soft card row */}
           <div className="mt-10 grid grid-cols-3 gap-3 w-full max-w-sm">
             {[
               { e: "⚡",  t: "פרסום ב-2 דקות" },
@@ -99,19 +162,18 @@ export default function AuthScreen() {
           <PrimaryButton onClick={() => setMode("register")}>צור חשבון מסעדה</PrimaryButton>
           <button onClick={() => setMode("login")}
             className="w-full text-gray-600 text-sm font-semibold py-2">
-            כבר יש לך חשבון? <span className="text-gray-900 underline">כניסה</span>
+            כבר יש לי חשבון? <span className="text-gray-900 underline">כניסה</span>
           </button>
         </div>
       </Frame>
     );
   }
 
-  // ── Registration / Login / Forgot view ────────────────────────────────
+  // ── Registration / Login / Forgot ──────────────────────────────────
   return (
     <Frame>
-      {/* Back button + small logo on top */}
       <div className="px-5 pt-4 flex items-center justify-between safe-top">
-        <button onClick={() => { setMode(null); setError(""); setResetSent(false); }}
+        <button onClick={() => { setMode(null); setError(""); setResetSent(false); setSoftWarning(null); }}
           aria-label="חזרה"
           className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200">
           <ChevronLeft size={20} className="text-gray-700 -scale-x-100" />
@@ -120,7 +182,7 @@ export default function AuthScreen() {
         <div className="w-10" />
       </div>
 
-      <div className="flex-1 flex flex-col px-6 pt-8">
+      <div className="flex-1 flex flex-col px-6 pt-8 overflow-y-auto">
         <h1 className="text-2xl font-black text-gray-900 leading-tight">
           {mode === "register" ? "בואו נכיר" :
            mode === "forgot"   ? "איפוס סיסמה" :
@@ -136,8 +198,8 @@ export default function AuthScreen() {
           {mode === "register" && (
             <>
               <Field placeholder="השם המלא שלך" value={name} onChange={setName} />
-              <Field placeholder="שם המסעדה (אופציונלי אם הוזמנת)"
-                value={restaurantName} onChange={setRestName} />
+              <Field placeholder="שם המסעדה"     value={restaurantName} onChange={setRestName} />
+              <Field placeholder="עיר"           value={city} onChange={setCity} />
             </>
           )}
 
@@ -157,13 +219,29 @@ export default function AuthScreen() {
             />
           )}
 
+          {/* Soft warning when Places couldn't find the restaurant */}
+          {softWarning && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex items-start gap-2">
+              <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-amber-800 text-xs leading-relaxed">
+                לא הצלחנו לאתר את <b>{softWarning.name}</b> ברשת. אם המסעדה חדשה
+                לגמרי או לא מופיעה ב-Google — אפשר להמשיך.
+                <button onClick={submit}
+                  className="block w-full mt-2 bg-amber-600 text-white text-xs font-bold py-2 rounded-xl active:bg-amber-700">
+                  כן, להמשיך בהרשמה
+                </button>
+              </div>
+            </div>
+          )}
+
           {error && (
-            <div className="bg-red-50 border border-red-100 rounded-xl py-3 px-4 text-red-700 text-sm text-center">
+            <div className="bg-red-50 border border-red-100 rounded-2xl py-3 px-4 text-red-700 text-sm text-center">
               {error}
             </div>
           )}
+
           {resetSent && mode === "forgot" && (
-            <div className="bg-green-50 border border-green-100 rounded-xl py-3 px-4 text-green-700 text-sm text-center">
+            <div className="bg-green-50 border border-green-100 rounded-2xl py-3 px-4 text-green-700 text-sm text-center">
               ✓ שלחנו אימייל עם קישור איפוס (אם החשבון קיים)
             </div>
           )}
@@ -176,20 +254,20 @@ export default function AuthScreen() {
           )}
         </div>
 
-        {/* Bottom CTA */}
-        <div className="pb-8 safe-bottom">
+        <div className="pb-8 safe-bottom pt-2">
           <PrimaryButton
-            onClick={submit}
+            onClick={() => { setSoftWarning(null); submit(); }}
             disabled={
-              loading ||
+              loading || pendingVerify ||
               !email ||
-              (mode === "register" && (password.length < MIN_PW || !name.trim())) ||
+              (mode === "register" && (password.length < MIN_PW || !name.trim() || !restaurantName.trim() || !city.trim())) ||
               (mode === "login"    && password.length < MIN_PW)
             }
-            loading={loading}
+            loading={loading || pendingVerify}
           >
-            {mode === "register" ? "המשך"
-              : mode === "forgot" ? "שלח קישור איפוס"
+            {pendingVerify ? "בודק שהמסעדה זמינה..."
+              : mode === "register" ? "המשך"
+              : mode === "forgot"   ? "שלח קישור איפוס"
               : "כניסה"}
           </PrimaryButton>
           {mode === "register" && (
@@ -203,7 +281,7 @@ export default function AuthScreen() {
   );
 }
 
-// ── Local presentational components ──────────────────────────────────────
+// ── Presentational ──
 
 function Frame({ children }) {
   return (

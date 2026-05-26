@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import { ChevronLeft, Loader2, Check, Plus, Minus } from "lucide-react";
+import { ChevronLeft, Loader2, Check, Plus, Minus, X } from "lucide-react";
 import { logEvent } from "../lib/tracking";
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
+
+// Local storage key for the wizard draft — scoped per user.
+const draftKey = (uid) => `shiftmatch:wizard_draft:${uid}`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WizardOnboarding — Fireberry-inspired wizard.
@@ -45,20 +48,26 @@ const BENEFITS = [
 // if we already have the restaurant name from signup.
 const STEPS = ["name", "type", "size", "city", "positions", "salary", "shifts", "benefits", "whatsapp", "review"];
 
-export default function WizardOnboarding({ user, onDone }) {
+export default function WizardOnboarding({ user, onDone, onClose }) {
   const presetName = user?.user_metadata?.restaurant_name?.trim() || "";
+  const presetCity = user?.user_metadata?.restaurant_city?.trim() || "";
 
-  const [step, setStep] = useState(presetName ? 1 : 0); // skip name if already set
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
+  // Try to restore a draft if one exists for this user.
+  const restored = (() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(draftKey(user?.id));
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch { return null; }
+  })();
 
-  // All collected form data lives here.
-  const [d, setD] = useState({
-    name: presetName,
-    type: "",
-    size: "",
-    city: "",
-    area: "",
+  const initialD = restored?.d || {
+    name:  presetName,
+    type:  "",
+    size:  "",
+    city:  presetCity,
+    area:  "",
     positions: [],
     positionSalaries: {},
     positionCounts: {},
@@ -66,7 +75,28 @@ export default function WizardOnboarding({ user, onDone }) {
     benefits: [],
     whatsapp: "",
     urgent: false,
-  });
+  };
+
+  // First incomplete step: name (if blank) → otherwise jump to where they left off.
+  const initialStep = restored?.step ?? (initialD.name ? 1 : 0);
+
+  const [step, setStep] = useState(initialStep);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [d, setD] = useState(initialD);
+
+  // Persist a draft on every change so the wizard can resume cleanly.
+  useEffect(() => {
+    if (typeof window === "undefined" || !user?.id) return;
+    try {
+      window.localStorage.setItem(draftKey(user.id), JSON.stringify({ step, d }));
+    } catch { /* quota — ignore */ }
+  }, [step, d, user?.id]);
+
+  const clearDraft = () => {
+    if (typeof window === "undefined" || !user?.id) return;
+    try { window.localStorage.removeItem(draftKey(user.id)); } catch {}
+  };
 
   // Helpers
   const set = (patch) => setD((x) => ({ ...x, ...patch }));
@@ -132,10 +162,17 @@ export default function WizardOnboarding({ user, onDone }) {
       .single();
 
     if (error) {
-      setErr(error.message || "שגיאה בשמירה");
+      // Friendly message when the unique (name, city) index trips.
+      const friendly = error.code === "23505" || /unique|duplicate/i.test(error.message || "")
+        ? "מסעדה בשם הזה בעיר הזו כבר רשומה. נסה/י שם אחר או פנה/י לתמיכה."
+        : (error.message || "שגיאה בשמירה");
+      setErr(friendly);
       setSaving(false);
       return;
     }
+
+    // Successful save — clean up the draft so a future re-entry is fresh.
+    clearDraft();
 
     logEvent("restaurant", "published", {
       user_id: user.id, restaurant_name: d.name,
@@ -170,8 +207,15 @@ export default function WizardOnboarding({ user, onDone }) {
 
   return (
     <Frame>
-      {/* Header: back + progress */}
+      {/* Header: close + back + progress */}
       <div className="px-5 pt-4 flex items-center gap-3 safe-top">
+        {onClose && (
+          <button onClick={onClose}
+            aria-label="סגור הגדרה"
+            className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200">
+            <X size={18} className="text-gray-700" />
+          </button>
+        )}
         {step > 0 && (
           <button onClick={back}
             className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200">
@@ -179,10 +223,6 @@ export default function WizardOnboarding({ user, onDone }) {
           </button>
         )}
         <Progress idx={step} total={STEPS.length} />
-        <button onClick={() => supabase.auth.signOut()}
-          className="text-gray-400 text-[11px] font-semibold underline">
-          התנתק/י
-        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pt-6 pb-4">

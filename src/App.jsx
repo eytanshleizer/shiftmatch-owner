@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
 import SplashScreen          from "./components/SplashScreen";
 import AuthScreen            from "./components/AuthScreen";
+import EmptyState            from "./components/EmptyState";
 import WizardOnboarding      from "./components/WizardOnboarding";
 import Dashboard             from "./components/Dashboard";
 import AdminDashboard        from "./components/AdminDashboard";
@@ -9,15 +10,21 @@ import PendingApprovalScreen from "./components/PendingApprovalScreen";
 import InvitationScreen      from "./components/InvitationScreen";
 
 /**
- * Top-level routing.  Decides which screen to show based on auth + membership state:
- *  - No session              → AuthScreen
- *  - Pending invitation      → InvitationScreen (accept/decline)
- *  - Membership pending/rej. → PendingApprovalScreen
- *  - Approved membership     → Dashboard
- *  - No membership at all    → ChatOnboarding (new restaurant)
+ * Top-level routing.
+ *
+ * Per SEPARATION_SPEC.md the post-signup flow now goes:
+ *   AuthScreen → (auth state) → EmptyState → WizardOnboarding → Dashboard
+ *
+ * Order of branches:
+ *   - /admin path                → AdminDashboard
+ *   - No session                 → AuthScreen
+ *   - Pending invitation         → InvitationScreen
+ *   - Membership pending/rej.    → PendingApprovalScreen
+ *   - Approved + restaurant      → Dashboard
+ *   - Approved, no restaurant    → EmptyState (CTA opens WizardOnboarding overlay)
+ *   - Onboarding overlay open    → WizardOnboarding
  */
 export default function App() {
-  // Admin dashboard route — /admin in URL
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
     return <AdminDashboard />;
   }
@@ -25,12 +32,25 @@ export default function App() {
   const [splash, setSplash]         = useState(true);
   const [session, setSession]       = useState(null);
   const [restaurant, setRestaurant] = useState(null);
-  const [membership, setMembership] = useState(null);   // user's restaurant_members row
-  const [invitation, setInvitation] = useState(null);   // pending invitation by email
+  const [membership, setMembership] = useState(null);
+  const [invitation, setInvitation] = useState(null);
   const [loading, setLoading]       = useState(true);
 
+  // Wizard open/closed state — independent from "do I have a restaurant".
+  // Persisted in sessionStorage so a page refresh while filling out the
+  // wizard doesn't bump the user back to EmptyState.
+  const [wizardOpen, setWizardOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem("shiftmatch:wizard_open") === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (wizardOpen) window.sessionStorage.setItem("shiftmatch:wizard_open", "1");
+    else            window.sessionStorage.removeItem("shiftmatch:wizard_open");
+  }, [wizardOpen]);
+
   const resetState = () => {
-    setRestaurant(null); setMembership(null); setInvitation(null);
+    setRestaurant(null); setMembership(null); setInvitation(null); setWizardOpen(false);
   };
 
   const signOut = async () => {
@@ -38,17 +58,10 @@ export default function App() {
     resetState();
   };
 
-  // Load the user's restaurant context.
-  // Order of precedence:
-  //   1) Approved member  → load that restaurant (latest first)
-  //   2) Pending/Rejected → show pending screen
-  //   3) Open invitation  → show invitation screen
-  //   4) Nothing          → onboarding (will create restaurant + auto-member via trigger)
   const loadContext = async (uid, email) => {
     setLoading(true);
     resetState();
 
-    // 1+2: Memberships
     const { data: memberships } = await supabase
       .from("restaurant_members")
       .select("*, restaurant:restaurants(*)")
@@ -71,7 +84,6 @@ export default function App() {
       return;
     }
 
-    // 3: Open invitations by email
     if (email) {
       const { data: invites } = await supabase
         .from("restaurant_invitations")
@@ -88,7 +100,7 @@ export default function App() {
       }
     }
 
-    // 4: No state → fresh onboarding (legacy fallback: check old owner_id linkage too)
+    // Legacy fallback for old accounts created before restaurant_members.
     const { data: legacy } = await supabase
       .from("restaurants")
       .select("*")
@@ -114,13 +126,13 @@ export default function App() {
 
   if (splash) return <SplashScreen onDone={() => setSplash(false)} />;
   if (loading) return (
-    <div className="h-full flex items-center justify-center bg-[#0F0F0F]">
-      <div className="w-10 h-10 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
+    <div className="h-full flex items-center justify-center bg-white">
+      <div className="w-10 h-10 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
     </div>
   );
-  if (!session) return <AuthScreen onAuth={() => {}} />;
 
-  // Pending invitation → accept/decline screen
+  if (!session) return <AuthScreen />;
+
   if (invitation) {
     return (
       <InvitationScreen
@@ -132,7 +144,6 @@ export default function App() {
     );
   }
 
-  // Member exists but not approved (pending or rejected)
   if (membership && membership.status !== "approved") {
     return (
       <PendingApprovalScreen
@@ -145,9 +156,24 @@ export default function App() {
     );
   }
 
-  // No restaurant context at all → onboarding (new owner)
+  // No restaurant context yet → empty landing OR wizard (if opened from empty).
   if (!restaurant) {
-    return <WizardOnboarding user={session.user} onDone={(r) => setRestaurant(r)} />;
+    if (wizardOpen) {
+      return (
+        <WizardOnboarding
+          user={session.user}
+          onDone={(r) => { setRestaurant(r); setWizardOpen(false); }}
+          onClose={() => setWizardOpen(false)}
+        />
+      );
+    }
+    return (
+      <EmptyState
+        user={session.user}
+        onStart={() => setWizardOpen(true)}
+        onSignOut={signOut}
+      />
+    );
   }
 
   return (
