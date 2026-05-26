@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
+import { can, ROLE_LABEL } from "../lib/permissions";
 
 const TYPES = [
   "מסעדת שף", "ים-תיכוני", "איטלקי", "אסייתי", "סושי", "מזון מהיר",
@@ -51,7 +52,11 @@ const SOFT_OPTIONS = [
   { key: "car_required",    label: "מעדיף עם רכב" },
 ];
 
-export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPlans, onOpenTeam, onOpenQuestionnaire, role }) {
+export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPlans, onOpenTeam, onOpenQuestionnaire, role = "owner" }) {
+  // Per spec §2.2 — only owner/admin/manager can edit restaurant fields
+  // & screening; recruiter/viewer see read-only.
+  const canEditJobs       = can(role, "edit_jobs");
+  const canEditScreening  = can(role, "edit_screening");
   // Local form state mirrors the DB row but allows un-saved edits.
   const [form, setForm] = useState({
     name:        restaurant?.name || "",
@@ -138,6 +143,11 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
 
   const save = async () => {
     if (!dirty) return;
+    if (!canEditJobs) {
+      setSaveError(`התפקיד שלך (${ROLE_LABEL[role] || role}) אינו מאפשר עריכה`);
+      setTimeout(() => setSaveError(""), 4000);
+      return;
+    }
     setSaving(true); setSaveError("");
     const { data, error } = await supabase
       .from("restaurants")
@@ -166,7 +176,9 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
             <Settings size={20} className="text-brand-400" />
             הגדרות
           </h2>
-          <p className="text-gray-500 text-xs mt-0.5">עריכת פרטי המסעדה</p>
+          <p className="text-gray-500 text-xs mt-0.5">
+            {canEditJobs ? "עריכת פרטי המסעדה" : `תפקיד: ${ROLE_LABEL[role] || role} · צפייה בלבד`}
+          </p>
         </div>
         {dirty && !saving && !savedFlash && (
           <span className="text-amber-400 text-[10px] font-bold uppercase tracking-wide bg-amber-500/10 border border-amber-500/30 px-2 py-1 rounded-full">
@@ -174,6 +186,12 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
           </span>
         )}
       </div>
+
+      {!canEditJobs && (
+        <div className="mx-4 mb-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-2xl px-4 py-3 flex items-center gap-2">
+          🔒 התפקיד שלך ({ROLE_LABEL[role] || role}) אינו מאפשר עריכה. ניתן לצפות בלבד.
+        </div>
+      )}
 
       <div className="px-4 space-y-4">
 

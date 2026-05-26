@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import { Phone, MapPin, Clock, Loader2, ChevronRight, ArrowRight } from "lucide-react";
+import { Phone, MapPin, Clock, Loader2, ChevronRight, ArrowRight, Target } from "lucide-react";
+import { computeMatch, scoreColor } from "../lib/matching";
+import { can } from "../lib/permissions";
 
 const STATUS = {
   new:       { label: "חדש",  cls: "bg-brand-500/20 text-brand-400 border-brand-500/30" },
@@ -25,7 +27,9 @@ function initials(name) {
   return name.split(" ").slice(0,2).map(w => w[0]).join("").toUpperCase();
 }
 
-export default function ApplicationsTab({ restaurant }) {
+export default function ApplicationsTab({ restaurant, role = "owner" }) {
+  // Recruiter and viewer roles can still see candidates but only recruiter can contact.
+  const canContact = can(role, "contact_candidates");
   const [apps, setApps]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -54,12 +58,27 @@ export default function ApplicationsTab({ restaurant }) {
           withProfiles = withProfiles.map((a) => ({ ...a, profile: byId[a.user_id] || {} }));
         }
       }
+      // Sort: new first, then by match score (desc), then date.
+      const questions = restaurant?.screening_questions || [];
+      const sorted = [...withProfiles].sort((a, b) => {
+        // Pending/new at top.
+        const aNew = a.status === "new" ? 0 : 1;
+        const bNew = b.status === "new" ? 0 : 1;
+        if (aNew !== bNew) return aNew - bNew;
+        if (questions.length) {
+          const sA = computeMatch(restaurant, questions, a.answers || {}).score ?? -1;
+          const sB = computeMatch(restaurant, questions, b.answers || {}).score ?? -1;
+          if (sA !== sB) return sB - sA;
+        }
+        // Newest last-resort.
+        return (new Date(b.created_at).getTime()) - (new Date(a.created_at).getTime());
+      });
       if (cancelled) return;
-      setApps(withProfiles);
+      setApps(sorted);
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [restaurant?.id]);
+  }, [restaurant?.id, restaurant?.screening_questions, restaurant?.mandatory_shifts, restaurant?.soft_attributes]);
 
   const open = async (app) => {
     if (app.status === "new") {
@@ -146,22 +165,39 @@ export default function ApplicationsTab({ restaurant }) {
             </div>
           )}
 
-          {/* ── Screening questionnaire answers ── */}
+          {/* ── Screening questionnaire answers + match score (spec §5.4) ── */}
           {restaurant?.screening_questions?.length > 0 && (() => {
             const questions = restaurant.screening_questions;
             const answers   = selected.answers || {};
+            const { score, perAnswer } = computeMatch(restaurant, questions, answers);
+            const sc = scoreColor(score);
             return (
               <div className="bg-[#161616] border border-white/5 rounded-2xl p-4">
-                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide mb-3">
-                  תשובות לשאלון סינון
-                </p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">
+                    תשובות לשאלון סינון
+                  </p>
+                  {score != null && (
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-bold rounded-full px-2.5 py-1 ${sc.bg} ${sc.text}`}>
+                      <Target size={12} />התאמה {score}%
+                    </span>
+                  )}
+                </div>
                 <div className="space-y-3">
                   {questions.map((q) => {
                     const a = answers[q.id];
                     const answered = a !== undefined && a !== null && a !== "";
+                    const status = perAnswer[q.id];
+                    const dot =
+                      status === "match"   ? "🟢" :
+                      status === "miss"    ? "🔴" :
+                      status === "neutral" ? "⚪" : "⚫";
                     return (
                       <div key={q.id} className="border-r-2 border-brand-500/40 pr-3">
-                        <p className="text-gray-400 text-[11px] mb-0.5">{q.label}</p>
+                        <p className="text-gray-400 text-[11px] mb-0.5 flex items-center gap-1">
+                          <span className="text-[10px]">{dot}</span>
+                          {q.label}
+                        </p>
                         <p className={`text-sm font-semibold ${answered ? "text-white" : "text-gray-600 italic"}`}>
                           {!answered
                             ? "לא ענה/תה"
@@ -173,25 +209,35 @@ export default function ApplicationsTab({ restaurant }) {
                     );
                   })}
                 </div>
+                <p className="text-[10px] text-gray-600 mt-3">
+                  🟢 תואם · 🔴 לא תואם · ⚪ ניטרלי · ⚫ לא ענה/תה
+                </p>
               </div>
             );
           })()}
 
-          {/* CTA buttons */}
-          <div className="flex gap-2.5 pt-1">
-            {p.phone && (
-              <a href={`tel:${p.phone}`} onClick={() => contact(selected)}
-                className="flex-1 bg-brand-500 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 active:bg-brand-600 shadow-lg shadow-brand-500/25 text-sm">
-                <Phone size={16}/>התקשר/י
-              </a>
-            )}
-            {wa && (
-              <a href={wa} target="_blank" rel="noreferrer" onClick={() => contact(selected)}
-                className="flex-1 bg-[#25D366] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 active:opacity-80 shadow-lg shadow-green-500/20 text-sm">
-                <span className="text-base">💬</span> WhatsApp
-              </a>
-            )}
-          </div>
+          {/* CTA buttons — only visible to roles that can contact (spec §2.2) */}
+          {canContact && (
+            <div className="flex gap-2.5 pt-1">
+              {p.phone && (
+                <a href={`tel:${p.phone}`} onClick={() => contact(selected)}
+                  className="flex-1 bg-brand-500 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 active:bg-brand-600 shadow-lg shadow-brand-500/25 text-sm">
+                  <Phone size={16}/>התקשר/י
+                </a>
+              )}
+              {wa && (
+                <a href={wa} target="_blank" rel="noreferrer" onClick={() => contact(selected)}
+                  className="flex-1 bg-[#25D366] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 active:opacity-80 shadow-lg shadow-green-500/20 text-sm">
+                  <span className="text-base">💬</span> WhatsApp
+                </a>
+              )}
+            </div>
+          )}
+          {!canContact && (
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-3 text-center text-gray-500 text-xs">
+              🔒 התפקיד שלך אינו מאפשר יצירת קשר עם מועמדים
+            </div>
+          )}
         </div>
       </div>
     );
@@ -227,6 +273,10 @@ export default function ApplicationsTab({ restaurant }) {
           const s = STATUS[app.status] || STATUS.new;
           const isNew = app.status === "new";
           const ago = formatAgo(app.created_at);
+          const { score } = restaurant?.screening_questions?.length
+            ? computeMatch(restaurant, restaurant.screening_questions, app.answers || {})
+            : { score: null };
+          const sc = scoreColor(score);
           return (
             <div key={app.id} onClick={() => open(app)}
               className={`rounded-2xl p-4 flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer border relative overflow-hidden ${
@@ -245,7 +295,14 @@ export default function ApplicationsTab({ restaurant }) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-white font-bold text-sm">{p.name || "מועמד"}</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${s.cls}`}>{s.label}</span>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {score != null && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${sc.bg} ${sc.text}`}>
+                        {score}%
+                      </span>
+                    )}
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${s.cls}`}>{s.label}</span>
+                  </div>
                 </div>
                 <p className="text-gray-500 text-xs mt-0.5 truncate">
                   {p.experience || ""}

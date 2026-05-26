@@ -4,6 +4,7 @@ import {
   Loader2, ChevronDown, ChevronUp, Power, Trash2, Sparkles
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { can, ROLE_LABEL } from "../lib/permissions";
 
 // Position catalog with emoji + label.  Matches ChatOnboarding.jsx.
 const POSITIONS = [
@@ -37,7 +38,10 @@ const COMMITMENT_PRESETS = [
 
 const URGENT_PRICE = 79;
 
-export default function JobsTab({ restaurant, onUpdate }) {
+export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
+  // Per spec §2.2 — only owner/admin/manager can edit jobs.
+  const canEdit = can(role, "edit_jobs");
+
   // Selected positions live in restaurant.position_types (already in DB).
   const positions = restaurant?.position_types || [];
 
@@ -57,6 +61,7 @@ export default function JobsTab({ restaurant, onUpdate }) {
   const isOpen = (pos) => positionOpen[pos] !== false;
 
   const update = async (patch) => {
+    if (!canEdit) return; // Hard guard — buttons are also hidden, but be safe.
     setSaving(true);
     const { error } = await supabase
       .from("restaurants")
@@ -152,6 +157,12 @@ export default function JobsTab({ restaurant, onUpdate }) {
       </div>
 
       <div className="px-4 space-y-3">
+
+        {!canEdit && (
+          <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-2xl px-4 py-3 flex items-center gap-2">
+            🔒 התפקיד שלך ({ROLE_LABEL[role] || role}) אינו מאפשר עריכת משרות. ניתן לצפות בלבד.
+          </div>
+        )}
 
         {/* ── Urgent banner ── */}
         <div className={`rounded-2xl p-4 border ${

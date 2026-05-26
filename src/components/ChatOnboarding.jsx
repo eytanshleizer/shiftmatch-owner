@@ -131,14 +131,27 @@ export default function ChatOnboarding({ user, onDone }) {
 
   const addUser = (content) => setMessages(prev => [...prev, { role: "user", content }]);
 
-  // Initial greeting
+  // Initial greeting.  If the user signed up with a restaurant name already
+  // (per SPEC 1.1) we skip the "name" step entirely.
   useEffect(() => {
     (async () => {
       const userName = user?.user_metadata?.name?.split(" ")[0] || "";
-      await addBot(<>שלום{userName ? ` ${userName}` : ""}! 👋<br/>אני <span className="text-brand-400 font-bold">מאי</span>, עוזרת ה-AI שלך.</>, 600);
-      await addBot("בוא נקים את המסעדה שלך תוך 2 דקות 🚀", 1200);
-      await addBot("איך קוראים למסעדה שלך?", 1000);
-      setStep("name");
+      const presetRestaurantName = user?.user_metadata?.restaurant_name?.trim();
+
+      await addBot(<>שלום{userName ? ` ${userName}` : ""}! 👋<br/>אני <span className="text-brand-400 font-bold">מאי</span>, עוזרת ההגדרה שלך.</>, 600);
+
+      if (presetRestaurantName) {
+        // Restaurant name already provided at signup — skip to type.
+        data.current.name = presetRestaurantName;
+        await addBot(<>בוא נקים את <b className="text-white">{presetRestaurantName}</b> תוך 2 דקות 🚀</>, 1100);
+        await addBot("איזה סוג מסעדה זה?", 900);
+        await addBot("לדוגמה: סושי, איטלקי, מסעדת שף, בית קפה, בר...", 1100);
+        setStep("type");
+      } else {
+        await addBot("בוא נקים את המסעדה שלך תוך 2 דקות 🚀", 1100);
+        await addBot("איך קוראים למסעדה שלך?", 1000);
+        setStep("name");
+      }
     })();
   }, []);
 

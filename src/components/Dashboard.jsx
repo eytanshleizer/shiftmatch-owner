@@ -28,8 +28,8 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
         {tab === "home"     && <HomeTab     restaurant={restaurant} onUpdate={onUpdate} onSignOut={() => supabase.auth.signOut()} />}
-        {tab === "jobs"     && <JobsTab     restaurant={restaurant} onUpdate={onUpdate} />}
-        {tab === "apps"     && <ApplicationsTab restaurant={restaurant} />}
+        {tab === "jobs"     && <JobsTab     restaurant={restaurant} onUpdate={onUpdate} role={role} />}
+        {tab === "apps"     && <ApplicationsTab restaurant={restaurant} role={role} />}
         {tab === "settings" && <SettingsTab restaurant={restaurant} onUpdate={onUpdate}
           onSignOut={() => supabase.auth.signOut()}
           onOpenPlans={() => setPlansOpen(true)}

@@ -3,22 +3,30 @@ import { supabase } from "../lib/supabase";
 import { Loader2, Mail, Lock, Eye, EyeOff, ArrowLeft, Sparkles } from "lucide-react";
 import { logEvent } from "../lib/tracking";
 
+// Spec 1.1 — password must be at least 8 characters.
+const MIN_PW = 8;
+
 export default function AuthScreen() {
-  const [mode, setMode]       = useState(null); // null | "register" | "login"
+  const [mode, setMode]       = useState(null); // null | "register" | "login" | "forgot"
   const [email, setEmail]     = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName]       = useState("");
+  const [name, setName]       = useState("");           // Owner's full name
+  const [restaurantName, setRestaurantName] = useState(""); // Restaurant name (spec 1.1)
   const [showPw, setShowPw]   = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
+  const [resetSent, setResetSent] = useState(false);
 
   const submit = async () => {
     setError(""); setLoading(true);
     try {
       if (mode === "register") {
+        if (password.length < MIN_PW) throw new Error("PW_SHORT");
         const { data: authData, error: e } = await supabase.auth.signUp({
           email, password,
-          options: { data: { name, role: "restaurant" } },
+          // Store both names in user_metadata so the chat onboarding can read
+          // them without an extra DB call.
+          options: { data: { name, restaurant_name: restaurantName, role: "restaurant" } },
         });
         if (e) throw e;
         if (authData.user) {
@@ -27,21 +35,30 @@ export default function AuthScreen() {
             name, email, role: "restaurant", onboarded: false,
           });
           logEvent("restaurant", "signup", {
-            user_id: authData.user.id, owner_name: name, email,
+            user_id: authData.user.id, owner_name: name,
+            restaurant_name: restaurantName, email,
           });
         }
-      } else {
+      } else if (mode === "login") {
         const { data: authData, error: e } = await supabase.auth.signInWithPassword({ email, password });
         if (e) throw e;
         if (authData?.user?.id) {
           logEvent("restaurant", "login", { user_id: authData.user.id, email });
         }
+      } else if (mode === "forgot") {
+        // Spec 1.2 — Supabase Auth password reset link by email.
+        const { error: e } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+        });
+        if (e) throw e;
+        setResetSent(true);
       }
     } catch (e) {
       setError(
+        e.message === "PW_SHORT" ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
         e.message === "Invalid login credentials" ? "אימייל או סיסמה שגויים" :
         e.message === "User already registered" ? "המשתמש כבר רשום — התחבר/י" :
-        e.message.includes("Password") ? "סיסמה חייבת להיות לפחות 6 תווים" :
+        /Password/i.test(e.message || "") ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
         e.message
       );
     } finally {
@@ -107,23 +124,36 @@ export default function AuthScreen() {
       </button>
 
       <h1 className="text-3xl font-black text-white">
-        {mode === "register" ? "ברוכים הבאים 👋" : "ברוכים השבים"}
+        {mode === "register" ? "ברוכים הבאים 👋"
+          : mode === "forgot" ? "איפוס סיסמה"
+          : "ברוכים השבים"}
       </h1>
       <p className="text-gray-500 text-sm mt-1.5 mb-8">
-        {mode === "register" ? "בואו נצור לך חשבון בכמה שניות" : "כניסה לחשבון הקיים שלך"}
+        {mode === "register" ? "בואו נצור לך חשבון מסעדה בכמה שניות"
+          : mode === "forgot" ? "נשלח אליך קישור איפוס לאמייל"
+          : "כניסה לחשבון הקיים שלך"}
       </p>
 
       <div className="flex flex-col gap-3 flex-1">
         {mode === "register" && (
-          <Field icon="👤" placeholder="השם המלא שלך" value={name} onChange={setName} />
+          <>
+            <Field icon="👤" placeholder="השם המלא שלך"          value={name}           onChange={setName} />
+            <Field icon="🏪" placeholder="שם המסעדה"              value={restaurantName} onChange={setRestaurantName} />
+          </>
         )}
-        <Field icon={<Mail size={16}/>} placeholder="אימייל" value={email} onChange={setEmail} type="email" />
-        <Field
-          icon={<Lock size={16}/>} placeholder="סיסמה (לפחות 6 תווים)"
-          value={password} onChange={setPassword}
-          type={showPw ? "text" : "password"}
-          right={<button onClick={()=>setShowPw(!showPw)}>{showPw ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
-        />
+
+        <Field icon={<Mail size={16}/>} placeholder="אימייל"
+          value={email} onChange={setEmail} type="email" />
+
+        {mode !== "forgot" && (
+          <Field
+            icon={<Lock size={16}/>}
+            placeholder={`סיסמה (לפחות ${MIN_PW} תווים)`}
+            value={password} onChange={setPassword}
+            type={showPw ? "text" : "password"}
+            right={<button onClick={()=>setShowPw(!showPw)}>{showPw ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
+          />
+        )}
 
         {error && (
           <div className="bg-red-500/10 border border-red-500/20 rounded-2xl py-3 px-4 text-red-400 text-sm text-center">
@@ -131,11 +161,33 @@ export default function AuthScreen() {
           </div>
         )}
 
-        <button onClick={submit} disabled={loading || !email || password.length < 6 || (mode==="register" && !name.trim())}
+        {resetSent && mode === "forgot" && (
+          <div className="bg-green-500/10 border border-green-500/30 rounded-2xl py-3 px-4 text-green-300 text-sm text-center">
+            ✓ אם החשבון קיים — שלחנו אימייל עם קישור איפוס
+          </div>
+        )}
+
+        <button onClick={submit}
+          disabled={
+            loading ||
+            !email ||
+            (mode === "register" && (password.length < MIN_PW || !name.trim() || !restaurantName.trim())) ||
+            (mode === "login"    && password.length < MIN_PW)
+          }
           className="w-full bg-brand-500 text-white font-black py-4 rounded-2xl text-base mt-2 active:bg-brand-600 disabled:opacity-40 disabled:bg-white/10 flex items-center justify-center gap-2 shadow-xl shadow-brand-500/30">
           {loading ? <Loader2 size={18} className="animate-spin"/> : null}
-          {loading ? "..." : mode === "register" ? "צור חשבון" : "כניסה"}
+          {loading ? "..."
+            : mode === "register" ? "צור חשבון מסעדה"
+            : mode === "forgot"   ? "שלח קישור איפוס"
+            : "כניסה"}
         </button>
+
+        {mode === "login" && !resetSent && (
+          <button onClick={() => { setMode("forgot"); setError(""); setPassword(""); }}
+            className="text-brand-400 text-xs font-semibold mt-1 active:opacity-70">
+            שכחת סיסמה?
+          </button>
+        )}
 
         {mode === "register" && (
           <p className="text-[11px] text-gray-500 text-center leading-relaxed mt-1">
@@ -146,7 +198,9 @@ export default function AuthScreen() {
       </div>
 
       <p className="text-center text-xs text-gray-600 mt-4">
-        בלחיצה על "צור חשבון" את/ה מסכים/ה לתנאי השימוש
+        {mode === "register"
+          ? "בלחיצה על \"צור חשבון מסעדה\" את/ה מסכים/ה לתנאי השימוש"
+          : ""}
       </p>
     </div>
   );
