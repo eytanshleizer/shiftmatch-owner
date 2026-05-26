@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
 import SplashScreen          from "./components/SplashScreen";
 import AuthScreen            from "./components/AuthScreen";
-import ChatOnboarding        from "./components/ChatOnboarding";
+import WizardOnboarding      from "./components/WizardOnboarding";
 import Dashboard             from "./components/Dashboard";
 import AdminDashboard        from "./components/AdminDashboard";
 import PendingApprovalScreen from "./components/PendingApprovalScreen";
@@ -147,7 +147,7 @@ export default function App() {
 
   // No restaurant context at all → onboarding (new owner)
   if (!restaurant) {
-    return <ChatOnboarding user={session.user} onDone={(r) => setRestaurant(r)} />;
+    return <WizardOnboarding user={session.user} onDone={(r) => setRestaurant(r)} />;
   }
 
   return (
