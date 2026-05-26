@@ -4,6 +4,7 @@ import {
   Clock, Gift, ListChecks, FileText, Check, Loader2, LogOut, CreditCard, X, Users, HelpCircle
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
 
 const TYPES = [
   "מסעדת שף", "ים-תיכוני", "איטלקי", "אסייתי", "סושי", "מזון מהיר",
@@ -93,6 +94,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
 
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [newReq, setNewReq] = useState("");
   const [showTypePicker, setShowTypePicker] = useState(false);
 
@@ -136,7 +138,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
 
   const save = async () => {
     if (!dirty) return;
-    setSaving(true);
+    setSaving(true); setSaveError("");
     const { data, error } = await supabase
       .from("restaurants")
       .update(form)
@@ -149,7 +151,9 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1800);
     } else if (error) {
-      alert("שגיאה בשמירה: " + error.message);
+      // Show inline error instead of native alert (works better on mobile)
+      setSaveError(error.message || "שגיאה בשמירה — נסה/י שוב");
+      setTimeout(() => setSaveError(""), 5000);
     }
   };
 
@@ -251,15 +255,29 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
               className={inputCls} placeholder="מנהל משמרת" />
           </Field>
 
-          <Field label="וואטסאפ לגיוס" hint="המספר שמופיע למלצרים — מומלץ ייעודי">
-            <input type="tel" dir="ltr" value={form.recruitment_whatsapp}
-              onChange={(e) => set({ recruitment_whatsapp: e.target.value })}
-              className={`${inputCls} text-left`} placeholder="050-1234567" />
+          <Field
+            label="וואטסאפ לגיוס"
+            hint={form.recruitment_whatsapp && !isValidIsraeliPhone(form.recruitment_whatsapp)
+              ? "מספר חייב להיות בין 9 ל-10 ספרות"
+              : "המספר שמופיע למלצרים — מומלץ ייעודי"}
+          >
+            <input
+              type="tel" inputMode="numeric" dir="ltr"
+              maxLength={10}
+              value={form.recruitment_whatsapp}
+              onChange={(e) => set({ recruitment_whatsapp: normalizePhoneInput(e.target.value) })}
+              className={`${inputCls} text-left`} placeholder="0501234567"
+            />
           </Field>
 
           <Field label="טלפון">
-            <input type="tel" dir="ltr" value={form.phone} onChange={(e) => set({ phone: e.target.value })}
-              className={`${inputCls} text-left`} placeholder="03-1234567" />
+            <input
+              type="tel" inputMode="numeric" dir="ltr"
+              maxLength={10}
+              value={form.phone}
+              onChange={(e) => set({ phone: normalizePhoneInput(e.target.value) })}
+              className={`${inputCls} text-left`} placeholder="0312345678"
+            />
           </Field>
         </Section>
 
@@ -452,8 +470,13 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
         </div>
       </div>
 
-      {/* ── Sticky save bar ── */}
-      <div className="fixed bottom-[68px] right-0 left-0 px-4 pointer-events-none z-40">
+      {/* ── Sticky save bar + inline error ── */}
+      <div className="fixed bottom-[68px] right-0 left-0 px-4 pointer-events-none z-40 space-y-2">
+        {saveError && (
+          <div className="pointer-events-auto bg-red-500/15 border border-red-500/40 text-red-300 text-xs font-semibold rounded-2xl px-4 py-3 text-center shadow-xl shadow-red-500/20 backdrop-blur">
+            ⚠ {saveError}
+          </div>
+        )}
         <div className={`pointer-events-auto transition-all duration-300 ${
           dirty || savedFlash ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
         }`}>

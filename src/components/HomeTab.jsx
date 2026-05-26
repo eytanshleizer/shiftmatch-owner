@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { Zap, Users, LogOut, TrendingUp, Eye, Bell, ChevronRight, Star, X, MessageCircle, Edit3 } from "lucide-react";
+import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
 
 export default function HomeTab({ restaurant: r, onUpdate, onSignOut }) {
   const [appCount, setAppCount]   = useState(0);
@@ -45,8 +46,8 @@ export default function HomeTab({ restaurant: r, onUpdate, onSignOut }) {
   };
 
   const saveWhatsApp = async () => {
-    const cleaned = waInput.trim();
-    if (cleaned.replace(/\D/g, "").length < 9) return;
+    const cleaned = normalizePhoneInput(waInput);
+    if (!isValidIsraeliPhone(cleaned)) return;
     const { data } = await supabase.from("restaurants")
       .update({ recruitment_whatsapp: cleaned, phone: cleaned })
       .eq("id", r.id).select().single();
@@ -219,12 +220,14 @@ export default function HomeTab({ restaurant: r, onUpdate, onSignOut }) {
           </div>
           {editingWA ? (
             <div className="flex gap-2">
-              <input value={waInput} onChange={e => setWaInput(e.target.value)}
-                type="tel" placeholder="050-1234567"
-                autoFocus
-                className="flex-1 bg-white/5 text-white placeholder-gray-500 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-500/40 border border-white/5" />
+              <input value={waInput}
+                onChange={(e) => setWaInput(normalizePhoneInput(e.target.value))}
+                type="tel" inputMode="numeric" maxLength={10}
+                placeholder="0501234567" autoFocus dir="ltr"
+                className="flex-1 bg-white/5 text-white placeholder-gray-500 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-500/40 border border-white/5 text-left" />
               <button onClick={saveWhatsApp}
-                className="bg-green-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold active:bg-green-600">
+                disabled={!isValidIsraeliPhone(waInput)}
+                className="bg-green-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold active:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed">
                 שמור
               </button>
               <button onClick={() => { setWaInput(r?.recruitment_whatsapp || r?.phone || ""); setEditingWA(false); }}
@@ -264,10 +267,10 @@ export default function HomeTab({ restaurant: r, onUpdate, onSignOut }) {
             inactiveClass="bg-[#161616] border-white/5"
             icon={<Zap size={18} className={r?.urgent ? "text-red-400" : "text-gray-500"} fill={r?.urgent ? "#f87171" : "none"} />}
             title="גיוס דחוף"
-            subtitle={r?.urgent ? "פעיל · תגית אדומה · חשיפה ×4" : "חשיפה ×4 · ₪29 חד-פעמי"}
+            subtitle={r?.urgent ? "פעיל · תגית אדומה · חשיפה ×4" : "חשיפה ×4 · ₪79 חד-פעמי"}
             titleClass={r?.urgent ? "text-red-300" : "text-gray-300"}
             right={!r?.urgent
-              ? <span className="text-[10px] bg-yellow-400 text-black px-2 py-0.5 rounded-full font-black">₪29</span>
+              ? <span className="text-[10px] bg-yellow-400 text-black px-2 py-0.5 rounded-full font-black">₪79</span>
               : <div className="w-5 h-5 rounded-full border-2 bg-red-500 border-red-500 flex items-center justify-center"><span className="text-white text-[10px] font-black">✓</span></div>
             }
           />
@@ -305,7 +308,7 @@ export default function HomeTab({ restaurant: r, onUpdate, onSignOut }) {
               <div className="bg-white/5 rounded-2xl p-4 my-5 border border-white/5">
                 <div className="flex items-baseline justify-between mb-3">
                   <span className="text-gray-400 text-sm">סה״כ לתשלום</span>
-                  <span className="text-white text-3xl font-black">₪29<span className="text-gray-500 text-xs font-normal mr-1">חד-פעמי</span></span>
+                  <span className="text-white text-3xl font-black">₪79<span className="text-gray-500 text-xs font-normal mr-1">חד-פעמי</span></span>
                 </div>
                 <div className="space-y-1.5 text-xs text-gray-400">
                   <Bullet>תגית "🚨 דחוף" אדומה</Bullet>
@@ -317,7 +320,7 @@ export default function HomeTab({ restaurant: r, onUpdate, onSignOut }) {
 
               <button onClick={confirmUrgentPayment}
                 className="w-full bg-gradient-to-l from-red-500 to-orange-500 text-white font-black py-4 rounded-2xl text-base active:opacity-80 shadow-lg shadow-red-500/30 mb-2">
-                שלם ₪29 והפעל
+                שלם ₪79 והפעל
               </button>
               <p className="text-center text-[10px] text-gray-600">
                 🔒 תשלום מאובטח · משולם · ביטול בכל עת

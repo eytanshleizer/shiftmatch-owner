@@ -376,37 +376,45 @@ applications (
 
 ---
 
-## 10. סטטוס נוכחי ומה צריך לבנות
+## 10. סטטוס נוכחי
 
-### ✅ כבר קיים
-- אימות אמייל+סיסמה (Supabase Auth)
-- מסעדה אחת לכל owner_id
-- AI chat onboarding
-- WhatsApp recruitment
-- פרסום משרה בסיסי
-- פניות + אנליטיקה
-- דשבורד אדמין
+### ✅ מה כבר נבנה ופועל (Phase 1–5)
+- **אימות** — אמייל+סיסמה דרך Supabase Auth, שדה "השם המלא שלך" נפרד משם המסעדה
+- **AI Chat Onboarding** עם "מאי" — חיפוש אינטרנט (Perplexity sonar-pro), fallback ידני אוטומטי כשהחיפוש נכשל
+- **משתמשים מרובים** — טבלת `restaurant_members` עם 5 תפקידים: owner / admin / manager / recruiter / viewer
+- **דף "צוות"** עם הזמנה לפי אימייל, אישור/דחייה של ממתינים, שינוי תפקיד, הסרה
+- **מסך "ממתין לאישור"** + מסך "התקבלה הזמנה" עם פולינג כל 10 שניות
+- **JobsTab** — ניהול משרות per-position: פתוח/סגור, שכר, כמות, הוספה/הסרה
+- **משמרות חובה + מכסה שבועית** — `mandatory_shifts` text[] + `shift_commitment_min/max`
+- **תשלום Urgent** — ₪79 ל-7 ימים, עם `urgent_until` ו-`urgent_price` ב-DB
+- **SettingsTab** — עריכת כל פרטי המסעדה: שם, סוג, עיר, אזור, כתובת, וואטסאפ, תיאור, משמרות, הטבות, דרישות
+- **מאפייני מסעדה** — `attributes` jsonb (vibe / kosher / size) + `soft_attributes` text[]
+- **שאלוני סינון** — ספרייה של 12 שאלות מוכנות + שאלות מותאמות אישית, 5 סוגי שאלות, שמירה ב-`screening_questions` jsonb
+- **תצוגת תשובות שאלון** בכרטיס המועמד ב-ApplicationsTab
+- **ולידציה לטלפון** — בדיוק 9-10 ספרות, מסנן תווים לא-מספריים, חיווי שגיאה מיידי
+- **Error Boundary** — מסך נפילה ידידותי במקום מסך לבן
+- **PostgREST schema reload** אוטומטי אחרי כל מיגרציה
+- **דשבורד Super-Admin** ב-`/admin`
 
-### 🔨 צריך לבנות
-1. **טבלת `restaurant_members`** + RLS policies
-2. **דף "צוות"** — הזמנה, אישור, kick, שינוי תפקיד
-3. **מסך "ממתין לאישור"** ליוזרים חדשים
-4. **טבלת `job_postings`** נפרדת + הפרדה מ-`restaurants`
-5. **toggle "פתוחה/סגורה"** למשרות
-6. **טבלת `questionnaires`** + `question_library`
-7. **עורך שאלון** (drag-drop, custom questions)
-8. **תצוגת תשובות שאלון** בכרטיס מועמד
-9. **חישוב `match_score`** אוטומטי
-10. **תגיות מסעדה** (attributes / soft_attributes)
-11. **רישום audit log** של פעולות admin
-12. **משמרות חובה + מכסה שבועית** — שדות חדשים בטופס פרסום משרה + פילטור אוטומטי בצד המלצר
-13. **תשלום Urgent מעודכן ל-₪79** — עדכון מחיר + UI
+### 🟡 חלקית / Polish
+- **AI חיפוש מסעדה** — האנדפוינט עובד, אבל דורש `OPENROUTER_API_KEY` ב-Vercel כדי להחזיר תוצאות אמיתיות. בלעדיו, fallback ידני אוטומטי.
+- **אימייל להזמנות** — כרגע ההזמנה מופיעה רק כשהמוזמן מתחבר עם האימייל הנכון. לשליחת אימייל בפועל צריך Resend/SendGrid key.
 
-### עדיפויות פיתוח
-1. ראשית: `restaurant_members` + צוות + אישורים — בלי זה אין רב-משתמשים
-2. שנית: `job_postings` נפרד + toggle סגירה — להפרדה נקייה ממסעדה
-3. שלישית: שאלונים — אופציה גדולה אבל יקרה לבנות
-4. רביעית: תגיות + match_score
+### ⏳ נשאר לעתיד (לא קריטי ל-MVP)
+1. **חישוב `match_score` אוטומטי** — העמודה קיימת, הנוסחה טרם נכתבה
+2. **Audit log** של פעולות admin/owner
+3. **`job_postings` נפרד** — כרגע משרות מנוהלות על `restaurants` עצמה, מספיק ל-MVP
+4. **פילטור מצד המלצר** לפי `mandatory_shifts` — שייך לאפליקציית המלצר (waiter-app)
+
+### 🐛 באגים שתוקנו בסשן האחרון
+- `.env.local` עם ערכים ריקים → אפליקציה מתרסקת (deleted broken file)
+- חסרות עמודות `position_salaries` ו-`position_counts` בטבלת restaurants (added)
+- `position_counts` לא נשמר בהשלמת onboarding (fixed in saveRestaurant)
+- AI search catch זרק את היוזר ל-"confirm" step ריק (fixed → goes to manual)
+- TeamPage + ApplicationsTab join ל-profiles נכשל ("no FK in schema cache") — שונה לשתי קריאות נפרדות
+- חסרה עמודת `email` ב-profiles (added + backfilled + trigger)
+- חוסר עקביות במחיר urgent: HomeTab הראה ₪29, JobsTab ₪79 (אוחד ל-₪79)
+- BackButton ב-Onboarding לא היה גלוי בכל המסכים (תוקן + נוסף סעיף "התנתק/י" להצלה)
 
 ---
 
@@ -420,4 +428,4 @@ applications (
 
 ---
 
-*עודכן: 2026-05-25*
+*עודכן: 2026-05-26 — אחרי סשן ניקוי באגים וליטוש UX*

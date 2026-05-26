@@ -37,10 +37,33 @@ export default function TeamPage({ restaurant, user, onBack }) {
 
   const load = async () => {
     setLoading(true);
+
+    // Self-heal: if the restaurant owner doesn't have a member row (because the
+    // auto-trigger missed them, e.g. demo-seeded restaurants), insert one now so
+    // they appear in the team list and have full RLS access.
+    if (user?.id && restaurant?.owner_id === user.id) {
+      const { data: existing } = await supabase
+        .from("restaurant_members")
+        .select("id")
+        .eq("restaurant_id", restaurant.id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!existing) {
+        await supabase.from("restaurant_members").insert({
+          restaurant_id: restaurant.id,
+          user_id: user.id,
+          role: "owner",
+          status: "approved",
+          approved_at: new Date().toISOString(),
+        });
+      }
+    }
+
+    // Fetch members + invitations in parallel.
     const [{ data: m }, { data: i }] = await Promise.all([
       supabase
         .from("restaurant_members")
-        .select("*, profile:profiles(name, email)")
+        .select("*")
         .eq("restaurant_id", restaurant.id),
       supabase
         .from("restaurant_invitations")
@@ -48,8 +71,25 @@ export default function TeamPage({ restaurant, user, onBack }) {
         .eq("restaurant_id", restaurant.id)
         .is("accepted_at", null),
     ]);
-    // Sort by role priority then status.
-    const sorted = (m || []).sort((a, b) => {
+
+    // Manually attach profile (no FK from restaurant_members → profiles,
+    // both reference auth.users → PostgREST can't auto-join).
+    let withProfiles = m || [];
+    if (withProfiles.length > 0) {
+      const userIds = withProfiles.map((x) => x.user_id);
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, name")
+        .in("id", userIds);
+      const byId = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+      withProfiles = withProfiles.map((row) => ({
+        ...row,
+        profile: byId[row.user_id] || { name: null },
+      }));
+    }
+
+    // Sort by status (pending first) then role priority.
+    const sorted = withProfiles.sort((a, b) => {
       const sa = a.status === "pending" ? -1 : 0;
       const sb = b.status === "pending" ? -1 : 0;
       if (sa !== sb) return sa - sb;

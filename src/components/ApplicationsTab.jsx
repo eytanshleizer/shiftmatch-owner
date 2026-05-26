@@ -32,11 +32,33 @@ export default function ApplicationsTab({ restaurant }) {
 
   useEffect(() => {
     if (!restaurant?.id) return;
-    supabase.from("applications")
-      .select("*, profile:profiles(*)")
-      .eq("restaurant_id", restaurant.id)
-      .order("created_at", { ascending: false })
-      .then(({ data }) => { setApps(data || []); setLoading(false); });
+    let cancelled = false;
+    (async () => {
+      const { data: rows } = await supabase
+        .from("applications")
+        .select("*")
+        .eq("restaurant_id", restaurant.id)
+        .order("created_at", { ascending: false });
+
+      // Manually attach profile — no FK from applications → profiles
+      // (both reference auth.users so PostgREST can't auto-join).
+      let withProfiles = rows || [];
+      if (withProfiles.length > 0) {
+        const userIds = [...new Set(withProfiles.map((r) => r.user_id).filter(Boolean))];
+        if (userIds.length) {
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("*")
+            .in("id", userIds);
+          const byId = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+          withProfiles = withProfiles.map((a) => ({ ...a, profile: byId[a.user_id] || {} }));
+        }
+      }
+      if (cancelled) return;
+      setApps(withProfiles);
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
   }, [restaurant?.id]);
 
   const open = async (app) => {

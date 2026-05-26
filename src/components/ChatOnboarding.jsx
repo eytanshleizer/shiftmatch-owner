@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { Send, ChevronLeft, Sparkles, MapPin, Loader2, Check } from "lucide-react";
 import { logEvent } from "../lib/tracking";
+import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
 
 const POSITIONS = [
   { id: "מלצרים/ות",   emoji: "🧑‍🍳" },
@@ -208,18 +209,27 @@ export default function ChatOnboarding({ user, onDone }) {
       data.current.candidates = candidates;
 
       if (candidates.length === 0) {
-        // Not found — offer to search again or continue manually
-        const hints = attempt === 1
-          ? "אולי הכתיב קצת שונה? נסה לתת לי את השם בעברית או באנגלית, ועיר ספציפית"
-          : "אם המסעדה חדשה או קטנה, אולי היא לא מופיעה ברשת עדיין — נמשיך ידנית";
-        await addBot(
-          <div className="space-y-1.5">
-            <p>לא הצלחתי למצוא את <b>{data.current.name}</b> ברשת 🤔</p>
-            <p className="text-xs text-gray-400">{hints}</p>
-          </div>,
-          400
-        );
-        setStep("pickCandidate"); // will show retry/manual options
+        // Not found in web search.  On first attempt offer retry, on second just skip
+        // straight to manual flow so the user isn't stuck in a loop.
+        if (attempt === 1) {
+          await addBot(
+            <div className="space-y-1.5">
+              <p>לא הצלחתי למצוא את <b>{data.current.name}</b> ברשת 🤔</p>
+              <p className="text-xs text-gray-400">אולי הכתיב שונה? תן/י לי את השם בעברית או באנגלית עם עיר מדויקת</p>
+            </div>,
+            400
+          );
+          setStep("pickCandidate"); // shows retry/manual buttons
+        } else {
+          await addBot(
+            <div className="space-y-1.5">
+              <p>בסדר, נמשיך ידנית — אסדר איתך הכל בשניות 💪</p>
+            </div>,
+            300
+          );
+          await addBot("איך תגדיר/י את המסעדה?", 700);
+          setStep("vibe");
+        }
       } else if (candidates.length === 1) {
         // Single match — auto-apply and show confirm
         applyCandidate(candidates[0]);
@@ -245,8 +255,9 @@ export default function ChatOnboarding({ user, onDone }) {
       }
     } catch (e) {
       setTyping(false);
-      await addBot("הייתה תקלה בחיפוש — נמשיך ידנית, נסדר את הכל ✓", 200);
-      setStep("confirm");
+      await addBot("חיפוש האינטרנט לא זמין כרגע — נמשיך ביחד ידנית 💪", 200);
+      await addBot("איך תגדיר/י את המסעדה?", 700);
+      setStep("vibe");
     }
   };
 
@@ -430,12 +441,12 @@ export default function ChatOnboarding({ user, onDone }) {
       case "urgent":
         data.current.urgent = value;
         if (value) {
-          addUser("🚨 כן, דחוף — ₪29");
+          addUser("🚨 כן, דחוף — ₪79");
           setStepHistory(h => [...h, "urgent"]);
           await addBot(
             <div className="space-y-1.5">
               <p>מעולה! 🔥</p>
-              <p className="text-xs text-gray-400">הסכום ₪29 יחויב לאחר השמירה (משולם — בקרוב)</p>
+              <p className="text-xs text-gray-400">הסכום ₪79 יחויב לאחר השמירה (משולם — בקרוב)</p>
             </div>,
             500
           );
@@ -477,7 +488,7 @@ export default function ChatOnboarding({ user, onDone }) {
       if (data?.lat && data?.lng) {
         return { lat: data.lat, lng: data.lng, verified_address: data.verified_address };
       }
-    } catch (e) { console.error("Geocode failed:", e); }
+    } catch (e) { /* geocode is best-effort; if the api isn't available we just save without coords */ }
     return null;
   };
 
@@ -507,6 +518,7 @@ export default function ChatOnboarding({ user, onDone }) {
         image_url:      d.image_url || `https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80`,
         hourly_rate:    d.hourly_rate,
         position_salaries: d.positionSalaries,
+        position_counts:   d.positionCounts,
         open_positions: d.totalPositions,
         shifts:         d.shifts,
         benefits:       d.benefits,
@@ -690,7 +702,7 @@ export default function ChatOnboarding({ user, onDone }) {
               <p className="text-[10px] text-white/80 font-medium">חשיפה ×4 · תגית אדומה · עליון בחיפוש</p>
             </div>
           </span>
-          <span className="bg-white/20 text-white text-xs font-black px-3 py-1.5 rounded-full">₪29</span>
+          <span className="bg-white/20 text-white text-xs font-black px-3 py-1.5 rounded-full">₪79</span>
         </button>
         <button onClick={() => advance("urgent", false)}
           className="w-full bg-white/8 text-white font-bold py-4 rounded-2xl text-sm active:bg-white/15 border border-white/5">
@@ -701,11 +713,21 @@ export default function ChatOnboarding({ user, onDone }) {
 
     if (step === "whatsapp") return (
       <div className="space-y-2">
-        <TextInput value={input} onChange={setInput} type="tel"
-          placeholder="050-1234567 (WhatsApp)"
-          onSend={() => input.replace(/\D/g,"").length >= 9 && advance("whatsapp", input.trim())} />
-        <p className="text-[10px] text-gray-500 text-center">
-          💚 וודא/י שזה מספר עם חשבון WhatsApp פעיל
+        <TextInput
+          value={input}
+          onChange={(v) => setInput(normalizePhoneInput(v))}
+          type="tel"
+          maxLength={10}
+          inputMode="numeric"
+          placeholder="0501234567 (WhatsApp)"
+          onSend={() => isValidIsraeliPhone(input) && advance("whatsapp", input)}
+        />
+        <p className={`text-[10px] text-center ${
+          input && !isValidIsraeliPhone(input) ? "text-amber-400" : "text-gray-500"
+        }`}>
+          {input && !isValidIsraeliPhone(input)
+            ? "מספר חייב להיות בין 9 ל-10 ספרות"
+            : "💚 וודא/י שזה מספר עם חשבון WhatsApp פעיל"}
         </p>
       </div>
     );
@@ -730,7 +752,7 @@ export default function ChatOnboarding({ user, onDone }) {
             </button>
           )}
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-base shadow-lg shadow-brand-500/30 flex-shrink-0">🤖</div>
-          <div>
+          <div className="flex-1">
             <div className="flex items-center gap-1.5">
               <p className="text-white font-bold text-sm">מאי</p>
               <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
@@ -738,6 +760,11 @@ export default function ChatOnboarding({ user, onDone }) {
             </div>
             <p className="text-gray-500 text-[10px]">עוזרת AI · הגדרת מסעדה</p>
           </div>
+          {/* Escape hatch: lets a stuck user sign out and start over */}
+          <button onClick={() => supabase.auth.signOut()}
+            className="text-[10px] text-gray-500 font-medium px-2 py-1 rounded-md active:bg-white/5">
+            התנתק/י
+          </button>
         </div>
         {/* Progress bar */}
         <div className="flex gap-1 mt-3">
@@ -826,13 +853,19 @@ function Row({ label, value, icon }) {
   );
 }
 
-function TextInput({ value, onChange, onSend, placeholder, type = "text" }) {
+function TextInput({ value, onChange, onSend, placeholder, type = "text", maxLength, inputMode }) {
+  const dir = type === "tel" ? "ltr" : undefined;
   return (
     <div className="flex gap-2">
-      <input type={type} value={value} onChange={e => onChange(e.target.value)}
-        onKeyDown={e => e.key === "Enter" && onSend()}
+      <input
+        type={type} value={value} onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && onSend()}
         placeholder={placeholder}
-        className="flex-1 bg-white/8 text-white placeholder-gray-500 rounded-2xl px-4 py-3.5 text-sm outline-none focus:bg-white/12 focus:ring-2 focus:ring-brand-500/40 border border-white/5" />
+        maxLength={maxLength}
+        inputMode={inputMode}
+        dir={dir}
+        className={`flex-1 bg-white/8 text-white placeholder-gray-500 rounded-2xl px-4 py-3.5 text-sm outline-none focus:bg-white/12 focus:ring-2 focus:ring-brand-500/40 border border-white/5 ${dir === "ltr" ? "text-left" : ""}`}
+      />
       <button onClick={onSend} disabled={!value.trim()}
         className="w-12 h-12 bg-brand-500 rounded-2xl flex items-center justify-center active:bg-brand-600 disabled:opacity-40 disabled:bg-white/10 shadow-lg shadow-brand-500/30">
         <Send size={17} className="text-white" />

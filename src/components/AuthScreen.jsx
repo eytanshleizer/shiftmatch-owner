@@ -115,7 +115,7 @@ export default function AuthScreen() {
 
       <div className="flex flex-col gap-3 flex-1">
         {mode === "register" && (
-          <Field icon="🏪" placeholder="שמך / שם המסעדה" value={name} onChange={setName} />
+          <Field icon="👤" placeholder="השם המלא שלך" value={name} onChange={setName} />
         )}
         <Field icon={<Mail size={16}/>} placeholder="אימייל" value={email} onChange={setEmail} type="email" />
         <Field
@@ -131,11 +131,18 @@ export default function AuthScreen() {
           </div>
         )}
 
-        <button onClick={submit} disabled={loading || !email || password.length < 6 || (mode==="register" && !name)}
+        <button onClick={submit} disabled={loading || !email || password.length < 6 || (mode==="register" && !name.trim())}
           className="w-full bg-brand-500 text-white font-black py-4 rounded-2xl text-base mt-2 active:bg-brand-600 disabled:opacity-40 disabled:bg-white/10 flex items-center justify-center gap-2 shadow-xl shadow-brand-500/30">
           {loading ? <Loader2 size={18} className="animate-spin"/> : null}
           {loading ? "..." : mode === "register" ? "צור חשבון" : "כניסה"}
         </button>
+
+        {mode === "register" && (
+          <p className="text-[11px] text-gray-500 text-center leading-relaxed mt-1">
+            👥 לאחר ההרשמה תוכל/י להזמין צוות נוסף<br/>
+            (מנהלים, מגייסים, צופים) עם תפקידים שונים
+          </p>
+        )}
       </div>
 
       <p className="text-center text-xs text-gray-600 mt-4">
