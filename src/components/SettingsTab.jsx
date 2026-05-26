@@ -170,11 +170,11 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
   };
 
   return (
-    <div className="pb-32">
+    <div className="pb-32 bg-gray-50 min-h-full text-gray-900">
       {/* Header */}
       <div className="px-5 pt-14 pb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-white font-black text-xl flex items-center gap-2">
+          <h2 className="text-gray-900 font-black text-xl flex items-center gap-2">
             <Settings size={20} className="text-brand-400" />
             הגדרות
           </h2>
@@ -198,7 +198,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
       <div className="px-4 space-y-4">
 
         {/* ── Cover image preview ── */}
-        <div className="relative h-44 rounded-2xl overflow-hidden bg-[#161616] border border-white/5">
+        <div className="relative h-44 rounded-2xl overflow-hidden bg-white border border-gray-200">
           {form.image_url ? (
             <img src={form.image_url} alt={form.name}
               className="w-full h-full object-cover"
@@ -228,7 +228,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
           <Field label="סוג מטבח">
             <button onClick={() => setShowTypePicker(true)}
               className={`${inputCls} text-right flex items-center justify-between`}>
-              <span className={form.type ? "text-white" : "text-gray-500"}>
+              <span className={form.type ? "text-gray-900" : "text-gray-500"}>
                 {form.type || "בחירת סוג מטבח"}
               </span>
               <span className="text-gray-500">›</span>
@@ -361,7 +361,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
                     className={`py-2.5 rounded-xl text-xs font-bold transition-all ${
                       on
                         ? "bg-brand-500 text-white shadow-lg shadow-brand-500/30"
-                        : "bg-white/5 text-gray-400 border border-white/10"
+                        : "bg-gray-50 text-gray-400 border border-gray-200"
                     }`}>{k.label}</button>
                 );
               })}
@@ -380,7 +380,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
                     className={`py-2.5 rounded-xl text-xs font-bold transition-all ${
                       on
                         ? "bg-brand-500 text-white shadow-lg shadow-brand-500/30"
-                        : "bg-white/5 text-gray-400 border border-white/10"
+                        : "bg-gray-50 text-gray-400 border border-gray-200"
                     }`}>{s.label}</button>
                 );
               })}
@@ -399,11 +399,11 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
                   className={`w-full p-3 rounded-xl border text-right flex items-center justify-between transition-all ${
                     on
                       ? "bg-brand-500/15 border-brand-500/40"
-                      : "bg-white/5 border-white/10"
+                      : "bg-gray-50 border-gray-200"
                   }`}>
-                  <span className={`text-sm font-semibold ${on ? "text-white" : "text-gray-400"}`}>{s.label}</span>
+                  <span className={`text-sm font-semibold ${on ? "text-gray-900" : "text-gray-600"}`}>{s.label}</span>
                   <div className={`w-5 h-5 rounded-md flex items-center justify-center ${
-                    on ? "bg-brand-500" : "border border-white/20"
+                    on ? "bg-gray-900" : "border border-gray-300"
                   }`}>
                     {on && <Check size={12} className="text-white" />}
                   </div>
@@ -418,8 +418,8 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
           <p className="text-gray-500 text-xs mb-3">דרישות חופשיות — כל שורה זו דרישה אחת</p>
           <div className="space-y-2 mb-3">
             {form.requirements.map((req, i) => (
-              <div key={i} className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5">
-                <span className="flex-1 text-white text-sm">{req}</span>
+              <div key={i} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
+                <span className="flex-1 text-gray-900 text-sm">{req}</span>
                 <button onClick={() => removeRequirement(i)}
                   className="w-6 h-6 rounded-lg bg-red-500/10 text-red-400 flex items-center justify-center active:bg-red-500/20">
                   <X size={12} />
@@ -444,24 +444,24 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
         </Section>
 
         {/* ── Actions ── */}
-        <div className="bg-[#161616] border border-white/5 rounded-2xl divide-y divide-white/5 overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-2xl divide-y divide-white/5 overflow-hidden">
           {onOpenTeam && (
             <button onClick={onOpenTeam}
-              className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-white/5">
+              className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-gray-50">
               <div className="w-9 h-9 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center">
                 <Users size={16} />
               </div>
-              <span className="flex-1 text-right text-white font-bold text-sm">ניהול צוות</span>
+              <span className="flex-1 text-right text-gray-900 font-bold text-sm">ניהול צוות</span>
               <span className="text-gray-600">›</span>
             </button>
           )}
           {onOpenQuestionnaire && (
             <button onClick={onOpenQuestionnaire}
-              className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-white/5">
+              className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-gray-50">
               <div className="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center">
                 <HelpCircle size={16} />
               </div>
-              <span className="flex-1 text-right text-white font-bold text-sm">
+              <span className="flex-1 text-right text-gray-900 font-bold text-sm">
                 שאלון סינון
                 {restaurant?.screening_questions?.length > 0 && (
                   <span className="text-gray-500 text-[10px] font-normal mr-1">· {restaurant.screening_questions.length} שאלות</span>
@@ -472,16 +472,16 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
           )}
           {onOpenPlans && (
             <button onClick={onOpenPlans}
-              className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-white/5">
+              className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-gray-50">
               <div className="w-9 h-9 rounded-xl bg-brand-500/15 text-brand-400 flex items-center justify-center">
                 <CreditCard size={16} />
               </div>
-              <span className="flex-1 text-right text-white font-bold text-sm">תוכניות ומחירים</span>
+              <span className="flex-1 text-right text-gray-900 font-bold text-sm">תוכניות ומחירים</span>
               <span className="text-gray-600">›</span>
             </button>
           )}
           <button onClick={onSignOut}
-            className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-white/5">
+            className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-gray-50">
             <div className="w-9 h-9 rounded-xl bg-red-500/15 text-red-400 flex items-center justify-center">
               <LogOut size={16} />
             </div>
@@ -521,12 +521,12 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
       {showTypePicker && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur z-50 flex items-end justify-center"
           onClick={() => setShowTypePicker(false)}>
-          <div className="bg-[#161616] border-t border-white/10 rounded-t-3xl w-full max-w-md p-6 pb-8 max-h-[80vh] overflow-y-auto"
+          <div className="bg-white border-t border-gray-100 rounded-t-3xl w-full max-w-md p-6 pb-8 max-h-[80vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-black text-lg">בחירת סוג מטבח</h3>
+              <h3 className="text-gray-900 font-black text-lg">בחירת סוג מטבח</h3>
               <button onClick={() => setShowTypePicker(false)}
-                className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-gray-400">
+                className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
                 <X size={16} />
               </button>
             </div>
@@ -537,7 +537,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
                   className={`py-3 rounded-xl text-sm font-bold transition-all ${
                     form.type === t
                       ? "bg-brand-500 text-white shadow-lg shadow-brand-500/30"
-                      : "bg-white/5 text-gray-300 border border-white/10 active:bg-white/10"
+                      : "bg-gray-50 text-gray-300 border border-gray-200 active:bg-gray-100"
                   }`}>
                   {t}
                 </button>
@@ -553,18 +553,18 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
 // ── Local presentational helpers ───────────────────────────────────
 
 const inputCls =
-  "w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-white text-sm outline-none focus:border-brand-500 placeholder:text-gray-600";
+  "w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-3 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900 placeholder:text-gray-400";
 
 const chipCls = (on) =>
   `inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
     on
       ? "bg-brand-500 text-white shadow-lg shadow-brand-500/30"
-      : "bg-white/5 text-gray-400 border border-white/10"
+      : "bg-gray-50 text-gray-400 border border-gray-200"
   }`;
 
 function Section({ icon: Icon, title, children }) {
   return (
-    <div className="bg-[#161616] border border-white/5 rounded-2xl p-4 space-y-3">
+    <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
       <div className="flex items-center gap-2 mb-1">
         <Icon size={15} className="text-brand-400" />
         <h3 className="text-white font-bold text-sm">{title}</h3>

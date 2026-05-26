@@ -194,9 +194,7 @@ export default function WizardOnboarding({ user, onDone }) {
         )}
 
         {stepId === "type" && (
-          <Step title="איזה סוג מסעדה?" sub="עוזר לנו להציע מועמדים מתאימים.">
-            <Chips options={TYPES} value={d.type} onChange={(v) => set({ type: v })} />
-          </Step>
+          <TypeStep value={d.type} onChange={(v) => set({ type: v })} />
         )}
 
         {stepId === "size" && (
@@ -294,6 +292,42 @@ export default function WizardOnboarding({ user, onDone }) {
         )}
       </div>
     </Frame>
+  );
+}
+
+// ── Type step with free-text "Other" support ─────────────────────────────
+//
+// The preset types are chips; selecting "אחר" replaces the value with empty
+// string and reveals an input.  Picking any other chip clears the free text.
+function TypeStep({ value, onChange }) {
+  // "Other" mode = the current value isn't one of the preset (non-other) labels.
+  const PRESETS = TYPES.slice(0, -1);            // everything except "אחר"
+  const isOther = value !== "" && !PRESETS.includes(value);
+  const [otherMode, setOtherMode] = useState(isOther);
+
+  const selectedChip = otherMode ? "אחר" : (PRESETS.includes(value) ? value : "");
+
+  return (
+    <Step title="איזה סוג מסעדה?" sub="עוזר לנו להציע מועמדים מתאימים.">
+      <Chips
+        options={TYPES}
+        value={selectedChip}
+        onChange={(v) => {
+          if (v === "אחר") { setOtherMode(true); onChange(""); }
+          else             { setOtherMode(false); onChange(v); }
+        }}
+      />
+      {otherMode && (
+        <div className="mt-4">
+          <TextInput
+            value={value}
+            onChange={onChange}
+            placeholder="פרט/י סוג מסעדה..."
+            autoFocus
+          />
+        </div>
+      )}
+    </Step>
   );
 }
 

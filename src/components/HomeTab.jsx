@@ -1,41 +1,48 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import { Zap, Users, LogOut, TrendingUp, Eye, Bell, ChevronRight, Star, X, MessageCircle, Edit3 } from "lucide-react";
+import {
+  Search, TrendingUp, Eye, MessageCircle, Phone, ChevronLeft, Edit3,
+  Briefcase, Users, Calendar, Sparkles
+} from "lucide-react";
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
 
-export default function HomeTab({ restaurant: r, onUpdate, onSignOut }) {
+// ─────────────────────────────────────────────────────────────────────────────
+// HomeTab — clean Fireberry-inspired white dashboard.
+// Cards on light gray background, big black "active listing" hero,
+// global search at top, quick KPIs and shortcuts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function HomeTab({ restaurant: r, onUpdate, onOpenSearch, onGoTab }) {
   const [appCount, setAppCount]   = useState(0);
   const [toggling, setToggling]   = useState(false);
-  const [showTip, setShowTip]     = useState(true);
-  const [showPay, setShowPay]     = useState(false);
   const [editingWA, setEditingWA] = useState(false);
   const [waInput, setWaInput]     = useState(r?.recruitment_whatsapp || r?.phone || "");
-  const [stats, setStats]         = useState({ views: 0, whatsapp: 0, calls: 0, lastClickAt: null });
+  const [stats, setStats]         = useState({ views: 0, whatsapp: 0, calls: 0 });
+  const [nextInterview, setNextInterview] = useState(null);
 
   useEffect(() => {
     if (!r?.id) return;
-    // Applications (new candidates)
-    supabase.from("applications").select("id", { count: "exact", head: true })
-      .eq("restaurant_id", r.id).eq("status", "new")
-      .then(({ count }) => setAppCount(count || 0));
-    // Real-time event stats from restaurant_events
-    supabase.from("restaurant_events").select("event_type,created_at")
-      .eq("restaurant_id", r.id)
-      .then(({ data }) => {
-        if (!data) return;
-        const s = { views: 0, whatsapp: 0, calls: 0, lastClickAt: null };
-        data.forEach(e => {
-          if (e.event_type === "click")    s.views++;
-          if (e.event_type === "whatsapp") s.whatsapp++;
-          if (e.event_type === "call")     s.calls++;
-          if (!s.lastClickAt || e.created_at > s.lastClickAt) s.lastClickAt = e.created_at;
-        });
-        setStats(s);
+    // Applications + event analytics
+    Promise.all([
+      supabase.from("applications").select("id", { count: "exact", head: true })
+        .eq("restaurant_id", r.id).eq("status", "new"),
+      supabase.from("restaurant_events").select("event_type").eq("restaurant_id", r.id),
+      supabase.from("interviews").select("*").eq("restaurant_id", r.id)
+        .gte("scheduled_at", new Date().toISOString())
+        .eq("status", "scheduled")
+        .order("scheduled_at", { ascending: true }).limit(1),
+    ]).then(([apps, events, intv]) => {
+      setAppCount(apps.count || 0);
+      const s = { views: 0, whatsapp: 0, calls: 0 };
+      (events.data || []).forEach((e) => {
+        if (e.event_type === "click")    s.views++;
+        if (e.event_type === "whatsapp") s.whatsapp++;
+        if (e.event_type === "call")     s.calls++;
       });
+      setStats(s);
+      setNextInterview(intv.data?.[0] || null);
+    });
   }, [r?.id]);
-
-  // Format last activity timestamp
-  const lastActivity = stats.lastClickAt ? formatAgo(stats.lastClickAt) : null;
 
   const toggleActive = async () => {
     setToggling(true);
@@ -54,390 +61,196 @@ export default function HomeTab({ restaurant: r, onUpdate, onSignOut }) {
     if (data) { onUpdate(data); setEditingWA(false); }
   };
 
-  const toggleUrgent = async () => {
-    // Off → On: require payment. Off → Off (already off): allow turn off freely.
-    if (!r.urgent) {
-      setShowPay(true); // show payment modal
-      return;
-    }
-    const { data } = await supabase.from("restaurants")
-      .update({ urgent: false }).eq("id", r.id).select().single();
-    if (data) onUpdate(data);
-  };
-
-  const confirmUrgentPayment = async () => {
-    setShowPay(false);
-    const { data } = await supabase.from("restaurants")
-      .update({ urgent: true }).eq("id", r.id).select().single();
-    if (data) onUpdate(data);
-  };
-
-  // Generate color initials avatar
-  const initials = r?.name?.split(" ").slice(0,2).map(w => w[0]).join("") || "R";
+  const totalPositions = Object.values(r?.position_counts || {}).reduce((a, b) => a + (parseInt(b) || 0), 0)
+                       || (r?.position_types?.length || 0);
 
   return (
-    <div className="pb-6">
-      {/* Hero header */}
-      <div className="relative overflow-hidden px-5 pt-14 pb-6"
-        style={{ background: "linear-gradient(160deg, #1a0a2e 0%, #0A0A0A 70%)" }}>
-        <div className="absolute top-0 right-0 w-48 h-48 bg-brand-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
-        <div className="absolute bottom-0 left-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl translate-y-1/2" />
-
-        <div className="relative z-10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {/* Restaurant avatar */}
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center font-black text-white text-lg shadow-lg shadow-brand-500/30 flex-shrink-0">
-              {initials}
-            </div>
-            <div>
-              <p className="text-gray-500 text-xs font-medium">שלום 👋</p>
-              <h1 className="text-white text-lg font-black leading-tight">{r?.name}</h1>
-              {r?.city && <p className="text-gray-500 text-xs">{r.city}</p>}
-            </div>
-          </div>
-          {/* Sign-out moved to the persistent user pill in the top-right of Dashboard */}
-        </div>
+    <div className="bg-gray-50 min-h-full pb-8 text-gray-900">
+      {/* ── Top search bar (always at the top of Home) ── */}
+      <div className="px-4 pt-16 pb-3 bg-white border-b border-gray-100">
+        <button onClick={onOpenSearch}
+          className="w-full bg-gray-100 border border-gray-200 rounded-2xl px-4 py-3 flex items-center gap-2.5 active:bg-gray-200 transition-colors">
+          <Search size={16} className="text-gray-500" />
+          <span className="text-gray-500 text-sm flex-1 text-right">חיפוש מועמדים, משרות, ראיונות...</span>
+          <span className="text-gray-400 text-[10px] font-semibold bg-white border border-gray-200 px-1.5 py-0.5 rounded">⌘K</span>
+        </button>
       </div>
 
-      <div className="px-4 space-y-3 -mt-2">
-        {/* Listing status card */}
-        <div onClick={toggleActive}
-          className={`rounded-3xl p-5 cursor-pointer transition-all duration-300 active:scale-[0.98] ${
+      <div className="px-4 pt-5 space-y-4">
+
+        {/* ── Active listing hero card ── */}
+        <button onClick={toggleActive} disabled={toggling}
+          className={`w-full rounded-3xl p-6 text-right transition-all active:scale-[0.99] ${
             r?.active
-              ? "bg-gradient-to-br from-brand-500 via-brand-500 to-brand-600 shadow-xl shadow-brand-500/30"
-              : "bg-[#161616] border border-white/5"
+              ? "bg-gray-900 text-white shadow-xl shadow-gray-900/20"
+              : "bg-white border border-gray-200 text-gray-700"
           }`}>
           <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1.5">
                 {r?.active && (
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-50" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-70" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-400" />
                   </span>
                 )}
-                <p className={`text-xs font-semibold uppercase tracking-wide ${r?.active ? "text-white/70" : "text-gray-500"}`}>
-                  {r?.active ? "מודעה פעילה" : "מודעה כבויה"}
+                <p className={`text-[11px] font-semibold uppercase tracking-wide ${r?.active ? "text-white/60" : "text-gray-500"}`}>
+                  {r?.active ? "המודעה פעילה" : "המודעה כבויה"}
                 </p>
               </div>
-              <p className={`text-2xl font-black ${r?.active ? "text-white" : "text-gray-300"}`}>
-                {r?.active ? "מגייסים עכשיו ✓" : "לחצ/י להפעלה"}
+              <p className="text-2xl font-black tracking-tight">
+                {r?.active ? "מגייסים עכשיו" : "לחצ/י להפעלת המודעה"}
               </p>
-              {r?.active && (
-                <p className="text-white/60 text-xs mt-1">המודעה שלך גלויה למועמדים</p>
-              )}
+              <p className={`text-xs mt-1.5 ${r?.active ? "text-white/60" : "text-gray-400"}`}>
+                {r?.active ? "מועמדים יכולים לראות ולפנות אליך" : "אף אחד לא רואה את המודעה כרגע"}
+              </p>
             </div>
-            {/* Toggle */}
-            <div className={`w-14 h-8 rounded-full transition-all duration-300 flex items-center px-1 ${
-              r?.active ? "bg-white/30" : "bg-white/10"
+            <div className={`w-14 h-8 rounded-full flex items-center px-1 flex-shrink-0 ${
+              r?.active ? "bg-white/20" : "bg-gray-200"
             }`} style={{ opacity: toggling ? 0.6 : 1 }}>
-              <div className={`w-6 h-6 rounded-full shadow-md transition-all duration-300 ${
-                r?.active ? "translate-x-6 bg-white" : "translate-x-0 bg-gray-500"
+              <div className={`w-6 h-6 rounded-full transition-transform duration-300 ${
+                r?.active ? "translate-x-6 bg-white" : "translate-x-0 bg-white"
               }`} />
             </div>
           </div>
+        </button>
 
-          {/* Tags */}
-          <div className="flex gap-2 flex-wrap mt-3">
-            <Tag active={r?.active} label={`₪${r?.hourly_rate}/שעה`} />
-            <Tag active={r?.active} label={`${r?.open_positions || 0} משרות`} />
-            {r?.type && <Tag active={r?.active} label={r.type} />}
-          </div>
+        {/* ── KPI strip ── */}
+        <div className="grid grid-cols-4 gap-2">
+          <KPI label="פניות"   value={appCount}     accent="bg-brand-100 text-brand-700" icon={<TrendingUp size={14} />} onClick={() => onGoTab?.("apps")} />
+          <KPI label="צפיות"   value={stats.views}  icon={<Eye size={14} />} />
+          <KPI label="WhatsApp" value={stats.whatsapp} accent="bg-green-100 text-green-700" icon={<MessageCircle size={14} />} />
+          <KPI label="שיחות"   value={stats.calls}  icon={<Phone size={14} />} />
         </div>
 
-        {/* Analytics — real-time numbers */}
-        <div>
-          <div className="flex items-center justify-between mb-2 px-1">
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-wide">📊 פעילות במודעה</p>
-            {lastActivity && (
-              <p className="text-gray-500 text-[10px]">פעילות אחרונה: {lastActivity}</p>
-            )}
-          </div>
-          <div className="grid grid-cols-4 gap-2">
-            <AnalyticsCard
-              icon={<Eye size={14} className="text-blue-400" />}
-              value={stats.views}
-              label="צפיות"
-              accent="blue"
-            />
-            <AnalyticsCard
-              icon={<MessageCircle size={14} className="text-green-400" />}
-              value={stats.whatsapp}
-              label="WhatsApp"
-              accent="green"
-              highlight={stats.whatsapp > 0}
-            />
-            <AnalyticsCard
-              icon={<Users size={14} className="text-brand-400" />}
-              value={appCount}
-              label="חדשות"
-              accent="brand"
-              highlight={appCount > 0}
-            />
-            <AnalyticsCard
-              icon={<TrendingUp size={14} className="text-purple-400" />}
-              value={r?.position_types?.length || 0}
-              label="תפקידים"
-              accent="purple"
-            />
-          </div>
-        </div>
+        {/* ── Next interview ── */}
+        {nextInterview && (
+          <button onClick={() => onGoTab?.("calendar")}
+            className="w-full bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3 text-right active:bg-gray-50 shadow-sm">
+            <div className="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0">
+              <Calendar size={18} className="text-blue-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] text-gray-500 font-semibold uppercase tracking-wide">הראיון הקרוב</p>
+              <p className="text-gray-900 font-bold text-sm mt-0.5">
+                {nextInterview.candidate_name || "מועמד/ת"} ·{" "}
+                {new Date(nextInterview.scheduled_at).toLocaleString("he-IL", {
+                  weekday: "short", day: "numeric", month: "numeric",
+                  hour: "2-digit", minute: "2-digit",
+                })}
+              </p>
+            </div>
+            <ChevronLeft size={16} className="text-gray-400" />
+          </button>
+        )}
 
-        {/* Position salaries */}
-        {r?.position_salaries && Object.keys(r.position_salaries).length > 0 && (
-          <div className="bg-[#161616] border border-white/5 rounded-2xl p-4">
-            <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide mb-3">שכר לפי תפקיד</p>
+        {/* ── Position salaries summary ── */}
+        {Object.keys(r?.position_salaries || {}).length > 0 && (
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-gray-900 font-bold text-sm flex items-center gap-1.5">
+                <Briefcase size={14} className="text-gray-500" />שכר לפי תפקיד
+              </p>
+              <button onClick={() => onGoTab?.("jobs")} className="text-gray-500 text-xs font-semibold flex items-center gap-1 active:text-gray-700">
+                ערוך <ChevronLeft size={11} />
+              </button>
+            </div>
             <div className="space-y-2">
               {Object.entries(r.position_salaries).map(([pos, sal]) => (
-                <div key={pos} className="flex items-center justify-between bg-white/3 rounded-xl px-3 py-2">
-                  <span className="text-white text-sm font-medium">{pos}</span>
-                  <span className="text-brand-400 font-black text-sm">₪{sal}<span className="text-gray-500 text-[10px] font-normal">/שעה</span></span>
+                <div key={pos} className="flex items-center justify-between border-b border-gray-100 last:border-0 pb-2 last:pb-0">
+                  <span className="text-gray-700 text-sm">{pos}</span>
+                  <span className="text-gray-900 font-bold text-sm">₪{sal}<span className="text-gray-400 font-normal text-xs">/שעה</span></span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* WhatsApp recruitment number */}
-        <div className="bg-gradient-to-br from-green-500/10 to-emerald-500/5 border border-green-500/20 rounded-2xl p-4">
-          <div className="flex items-center gap-2 mb-2.5">
-            <div className="w-9 h-9 rounded-xl bg-green-500/20 flex items-center justify-center">
-              <MessageCircle size={16} className="text-green-400" />
-            </div>
-            <div className="flex-1">
-              <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide">וואטסאפ לגיוס</p>
-              <p className="text-gray-400 text-[10px]">מועמדים יצרו איתך קשר כאן</p>
-            </div>
+        {/* ── Recruitment WhatsApp ── */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-gray-900 font-bold text-sm flex items-center gap-1.5">
+              <MessageCircle size={14} className="text-green-600" />וואטסאפ לגיוס
+            </p>
             {!editingWA && (
               <button onClick={() => setEditingWA(true)}
-                className="w-8 h-8 bg-white/5 rounded-lg flex items-center justify-center active:bg-white/10">
-                <Edit3 size={13} className="text-gray-400" />
+                className="text-gray-500 text-xs font-semibold flex items-center gap-1">
+                <Edit3 size={11} />ערוך
               </button>
             )}
           </div>
+          <p className="text-gray-500 text-[11px] mb-3">מועמדים יצרו איתך קשר דרך המספר הזה</p>
           {editingWA ? (
             <div className="flex gap-2">
               <input value={waInput}
                 onChange={(e) => setWaInput(normalizePhoneInput(e.target.value))}
-                type="tel" inputMode="numeric" maxLength={10}
-                placeholder="0501234567" autoFocus dir="ltr"
-                className="flex-1 bg-white/5 text-white placeholder-gray-500 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-500/40 border border-white/5 text-left" />
+                type="tel" inputMode="numeric" maxLength={10} dir="ltr" autoFocus
+                placeholder="0501234567"
+                className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900 text-left" />
               <button onClick={saveWhatsApp}
                 disabled={!isValidIsraeliPhone(waInput)}
-                className="bg-green-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold active:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed">
+                className="bg-gray-900 text-white px-4 py-2.5 rounded-xl text-sm font-bold active:bg-gray-800 disabled:opacity-40">
                 שמור
               </button>
               <button onClick={() => { setWaInput(r?.recruitment_whatsapp || r?.phone || ""); setEditingWA(false); }}
-                className="bg-white/10 text-gray-400 px-3 py-2.5 rounded-xl text-sm">
-                ✕
-              </button>
+                className="bg-gray-100 text-gray-500 px-3 py-2.5 rounded-xl text-sm">✕</button>
             </div>
           ) : (
-            <p className="text-white font-bold text-lg" dir="ltr">
+            <p className="text-gray-900 font-bold text-lg" dir="ltr">
               {r?.recruitment_whatsapp || r?.phone || "—"}
             </p>
           )}
         </div>
 
-        {/* Active shifts */}
-        {r?.shifts?.length > 0 && (
-          <div className="bg-[#161616] border border-white/5 rounded-2xl p-4">
-            <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide mb-2.5">משמרות פתוחות</p>
-            <div className="flex flex-wrap gap-2">
-              {r.shifts.map(s => (
-                <span key={s}
-                  className="bg-brand-500/15 text-brand-400 text-xs px-3 py-1.5 rounded-full font-semibold border border-brand-500/20">
-                  {s}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Quick actions */}
-        <div className="space-y-2">
-          {/* Urgent toggle */}
-          <ActionRow
-            onClick={toggleUrgent}
-            active={r?.urgent}
-            activeClass="bg-red-500/10 border-red-500/25"
-            inactiveClass="bg-[#161616] border-white/5"
-            icon={<Zap size={18} className={r?.urgent ? "text-red-400" : "text-gray-500"} fill={r?.urgent ? "#f87171" : "none"} />}
-            title="גיוס דחוף"
-            subtitle={r?.urgent ? "פעיל · תגית אדומה · חשיפה ×4" : "חשיפה ×4 · ₪79 חד-פעמי"}
-            titleClass={r?.urgent ? "text-red-300" : "text-gray-300"}
-            right={!r?.urgent
-              ? <span className="text-[10px] bg-yellow-400 text-black px-2 py-0.5 rounded-full font-black">₪79</span>
-              : <div className="w-5 h-5 rounded-full border-2 bg-red-500 border-red-500 flex items-center justify-center"><span className="text-white text-[10px] font-black">✓</span></div>
-            }
-          />
-
-          {/* Notifications row */}
-          <ActionRow
-            onClick={() => {}}
-            active={false}
-            activeClass=""
-            inactiveClass="bg-[#161616] border-white/5"
-            icon={<Bell size={18} className="text-gray-500" />}
-            title="התראות WhatsApp"
-            subtitle="קבל הודעה כשמישהו נרשם"
-            titleClass="text-gray-300"
-            right={<span className="text-[10px] bg-brand-500/20 text-brand-400 px-2 py-0.5 rounded-full font-bold">בקרוב</span>}
-          />
+        {/* ── Quick links ── */}
+        <div className="grid grid-cols-2 gap-2.5">
+          <QuickLink icon={<Briefcase size={16} />} label="ניהול משרות" sub={`${totalPositions} משרות`}
+            onClick={() => onGoTab?.("jobs")} />
+          <QuickLink icon={<Users size={16} />} label="פניות" sub={`${appCount} חדשות`}
+            highlight={appCount > 0}
+            onClick={() => onGoTab?.("apps")} />
+          <QuickLink icon={<Calendar size={16} />} label="ראיונות"
+            sub={nextInterview ? "ראיון קרוב" : "אין מתוכננים"}
+            onClick={() => onGoTab?.("calendar")} />
+          <QuickLink icon={<Sparkles size={16} />} label="קידום פרימיום" sub="הופעה ראשונה בחיפושים"
+            onClick={() => onGoTab?.("plans")} />
         </div>
-
-        {/* Payment sheet */}
-        {showPay && (
-          <div className="fixed inset-0 z-[100] flex items-end justify-center" onClick={() => setShowPay(false)}>
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-            <div className="relative w-full max-w-md bg-[#1a1a1a] rounded-t-3xl p-6 pb-8 border-t border-white/10 animate-[slideUp_0.3s_ease-out]"
-              onClick={e => e.stopPropagation()}
-              style={{ animation: "slideUp 0.3s ease-out both" }}>
-              <button onClick={() => setShowPay(false)}
-                className="absolute top-4 left-4 w-8 h-8 bg-white/10 rounded-full flex items-center justify-center">
-                <X size={14} className="text-gray-400" />
-              </button>
-
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-2xl mb-4 shadow-lg shadow-red-500/30">🚨</div>
-              <h2 className="text-white text-2xl font-black">גיוס דחוף</h2>
-              <p className="text-gray-400 text-sm mt-1 leading-relaxed">המודעה תופיע ראשונה בחיפוש עם תגית אדומה בולטת — חשיפה גבוהה פי 4</p>
-
-              <div className="bg-white/5 rounded-2xl p-4 my-5 border border-white/5">
-                <div className="flex items-baseline justify-between mb-3">
-                  <span className="text-gray-400 text-sm">סה״כ לתשלום</span>
-                  <span className="text-white text-3xl font-black">₪79<span className="text-gray-500 text-xs font-normal mr-1">חד-פעמי</span></span>
-                </div>
-                <div className="space-y-1.5 text-xs text-gray-400">
-                  <Bullet>תגית "🚨 דחוף" אדומה</Bullet>
-                  <Bullet>מודעה עליונה בחיפוש</Bullet>
-                  <Bullet>חשיפה ×4 ממודעה רגילה</Bullet>
-                  <Bullet>פעיל ל-7 ימים</Bullet>
-                </div>
-              </div>
-
-              <button onClick={confirmUrgentPayment}
-                className="w-full bg-gradient-to-l from-red-500 to-orange-500 text-white font-black py-4 rounded-2xl text-base active:opacity-80 shadow-lg shadow-red-500/30 mb-2">
-                שלם ₪79 והפעל
-              </button>
-              <p className="text-center text-[10px] text-gray-600">
-                🔒 תשלום מאובטח · משולם · ביטול בכל עת
-              </p>
-              <p className="text-center text-[10px] text-yellow-400 mt-1">
-                ⚡ בקרוב — לעת עתה נפעיל ידנית
-              </p>
-            </div>
-            <style>{`
-              @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-            `}</style>
-          </div>
-        )}
-
-        {/* Tip card */}
-        {showTip && (
-          <div className="bg-gradient-to-br from-brand-500/10 to-purple-500/10 border border-brand-500/20 rounded-2xl p-4 relative">
-            <button onClick={() => setShowTip(false)}
-              className="absolute top-3 left-3 text-gray-600 hover:text-gray-400 text-lg leading-none">×</button>
-            <div className="flex items-start gap-3">
-              <Star size={16} className="text-yellow-400 flex-shrink-0 mt-0.5" fill="#facc15" />
-              <div>
-                <p className="text-white font-bold text-sm mb-1">טיפ לשיפור הגיוס</p>
-                <p className="text-gray-400 text-xs leading-relaxed">
-                  מסעדות שמוסיפות הטבות ומפרטות שכר מקבלות פי 4 יותר פניות מהממוצע.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-function Bullet({ children }) {
+// ── KPI tile ──
+function KPI({ label, value, icon, accent = "bg-gray-100 text-gray-700", onClick }) {
+  const Wrap = onClick ? "button" : "div";
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-green-400 flex-shrink-0">✓</span>
-      <span>{children}</span>
-    </div>
-  );
-}
-
-function Tag({ active, label }) {
-  return (
-    <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-      active ? "bg-white/20 text-white" : "bg-white/5 text-gray-500"
-    }`}>
-      {label}
-    </span>
-  );
-}
-
-function StatCard({ icon, value, label, accent, highlight, isText }) {
-  return (
-    <div className={`rounded-2xl p-3.5 border transition-all ${
-      highlight
-        ? "bg-brand-500/10 border-brand-500/30"
-        : "bg-[#161616] border-white/5"
-    }`}>
-      <div className="mb-2">{icon}</div>
-      <p className={`font-black leading-tight ${isText ? "text-base" : "text-2xl"} text-white`}>{value}</p>
-      <p className="text-gray-500 text-[10px] mt-0.5 font-medium">{label}</p>
-    </div>
-  );
-}
-
-function AnalyticsCard({ icon, value, label, accent, highlight }) {
-  const accentBg = {
-    blue:    highlight ? "bg-blue-500/10 border-blue-500/30"     : "bg-[#161616] border-white/5",
-    green:   highlight ? "bg-green-500/10 border-green-500/30"   : "bg-[#161616] border-white/5",
-    brand:   highlight ? "bg-brand-500/10 border-brand-500/30"   : "bg-[#161616] border-white/5",
-    purple:  highlight ? "bg-purple-500/10 border-purple-500/30" : "bg-[#161616] border-white/5",
-  }[accent] || "bg-[#161616] border-white/5";
-
-  return (
-    <div className={`rounded-2xl p-2.5 border transition-all ${accentBg} relative overflow-hidden`}>
-      <div className="flex items-center gap-1 mb-1.5">{icon}</div>
-      <p className="font-black text-xl leading-none text-white">{value}</p>
-      <p className="text-gray-500 text-[9px] mt-1 font-semibold uppercase tracking-wide">{label}</p>
-      {highlight && (
-        <span className="absolute top-1.5 left-1.5 w-1.5 h-1.5 rounded-full bg-current"
-          style={{ color: accent === "green" ? "#4ade80" : accent === "brand" ? "#60a5fa" : "#a78bfa" }} />
-      )}
-    </div>
-  );
-}
-
-function formatAgo(timestamp) {
-  if (!timestamp) return null;
-  const ago = Date.now() - new Date(timestamp).getTime();
-  const mins = Math.floor(ago / 60000);
-  if (mins < 1)   return "עכשיו";
-  if (mins < 60)  return `לפני ${mins} דק׳`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `לפני ${hours} שע׳`;
-  const days = Math.floor(hours / 24);
-  return `לפני ${days} ימים`;
-}
-
-function ActionRow({ onClick, activeClass, inactiveClass, icon, title, subtitle, titleClass, checked, checkColor, right }) {
-  return (
-    <button onClick={onClick}
-      className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-colors active:scale-[0.98] text-right ${activeClass || inactiveClass}`}
-      style={{ WebkitTapHighlightColor: "transparent" }}>
-      <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
+    <Wrap onClick={onClick}
+      className="bg-white border border-gray-200 rounded-2xl p-3 text-center shadow-sm active:bg-gray-50 transition-colors">
+      <div className={`w-7 h-7 rounded-lg ${accent} flex items-center justify-center mx-auto mb-1.5`}>
         {icon}
       </div>
-      <div className="flex-1 min-w-0">
-        <p className={`font-bold text-sm ${titleClass}`}>{title}</p>
-        <p className="text-xs text-gray-600 mt-0.5">{subtitle}</p>
+      <p className="text-gray-900 font-black text-xl leading-none">{value}</p>
+      <p className="text-gray-500 text-[10px] mt-1 font-semibold">{label}</p>
+    </Wrap>
+  );
+}
+
+// ── Quick link card ──
+function QuickLink({ icon, label, sub, onClick, highlight }) {
+  return (
+    <button onClick={onClick}
+      className={`text-right rounded-2xl p-4 border transition-colors ${
+        highlight
+          ? "bg-brand-50 border-brand-200 active:bg-brand-100"
+          : "bg-white border-gray-200 active:bg-gray-50"
+      } shadow-sm`}>
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${
+        highlight ? "bg-brand-100 text-brand-700" : "bg-gray-100 text-gray-700"
+      }`}>
+        {icon}
       </div>
-      {right || (
-        checked !== undefined && (
-          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${checkColor}`}>
-            {checked && <span className="text-white text-[10px] font-black">✓</span>}
-          </div>
-        )
-      )}
+      <p className="text-gray-900 font-bold text-sm">{label}</p>
+      <p className={`text-xs mt-0.5 ${highlight ? "text-brand-700 font-semibold" : "text-gray-500"}`}>{sub}</p>
     </button>
   );
 }
