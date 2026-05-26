@@ -37,6 +37,13 @@ export default function AuthScreen() {
   const [softWarning, setSoftWarning] = useState(null);  // { name, city } once acknowledged
   const [pendingVerify, setPendingVerify] = useState(false);
 
+  // Set when sign-up succeeds but no session was returned because
+  // Supabase requires email confirmation.  We show the user a
+  // "check your inbox" panel + a resend button instead of leaving them
+  // staring at the form with no feedback.
+  const [pendingConfirmation, setPendingConfirmation] = useState(null); // { email } or null
+  const [resending, setResending] = useState(false);
+
   const submit = async () => {
     setError(""); setLoading(true);
     try {
@@ -76,10 +83,14 @@ export default function AuthScreen() {
           }
         }
 
-        // Step 2: create the auth user + profile.
+        // Step 2: create the auth user.  Profile creation is handled by
+        // the on_auth_user_created DB trigger (reads user_metadata), so we
+        // don't need an auth session here — which is what happens when
+        // email confirmation is ON.
         const { data: authData, error: e } = await supabase.auth.signUp({
           email, password,
           options: {
+            emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
             data: {
               name,
               restaurant_name: restaurantName,
@@ -89,18 +100,18 @@ export default function AuthScreen() {
           },
         });
         if (e) throw e;
+
         if (authData.user) {
-          await supabase.from("profiles").upsert({
-            id: authData.user.id,
-            name, email, role: "restaurant",
-            onboarded: false,
-            suggested_restaurant_name: restaurantName,
-            suggested_city: city,
-          });
           logEvent("restaurant", "signup", {
             user_id: authData.user.id, owner_name: name,
             restaurant_name: restaurantName, restaurant_city: city, email,
           });
+        }
+
+        // If Supabase didn't return a session, email confirmation is required.
+        // Show the "check your inbox" panel instead of leaving the user stuck.
+        if (!authData.session) {
+          setPendingConfirmation({ email });
         }
       } else if (mode === "login") {
         const { data: authData, error: e } = await supabase.auth.signInWithPassword({ email, password });
@@ -122,6 +133,7 @@ export default function AuthScreen() {
         msg === "CITY_REQ"          ? "חסר שם העיר" :
         msg === "RESTAURANT_TAKEN"  ? "מסעדה בשם הזה בעיר הזו כבר רשומה. אם זו המסעדה שלך, פנה/י לתמיכה." :
         msg === "Invalid login credentials" ? "אימייל או סיסמה שגויים" :
+        msg === "Email not confirmed"       ? "החשבון עדיין לא אומת. בדוק/י את האמייל ולחצ/י על קישור האישור." :
         msg === "User already registered"   ? "המשתמש כבר רשום — התחבר/י" :
         /Password/i.test(msg) ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
         msg || "שגיאה — נסה שוב"
@@ -130,6 +142,43 @@ export default function AuthScreen() {
       setLoading(false);
     }
   };
+
+  const resendConfirmation = async () => {
+    if (!pendingConfirmation?.email) return;
+    setResending(true);
+    await supabase.auth.resend({ type: "signup", email: pendingConfirmation.email });
+    setResending(false);
+  };
+
+  // ── Post-signup: email confirmation pending ────────────────────────
+  if (pendingConfirmation) {
+    return (
+      <Frame>
+        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center safe-top">
+          <div className="w-20 h-20 rounded-3xl bg-blue-50 border border-blue-100 flex items-center justify-center mb-6">
+            <span className="text-3xl">📬</span>
+          </div>
+          <h1 className="text-2xl font-black text-gray-900 leading-tight">בדוק/בדקי את האמייל</h1>
+          <p className="text-gray-500 text-sm mt-3 leading-relaxed max-w-xs">
+            שלחנו אימייל ל-<b className="text-gray-900" dir="ltr">{pendingConfirmation.email}</b> עם
+            קישור לאישור החשבון. לחצ/י עליו כדי להמשיך.
+          </p>
+          <p className="text-gray-400 text-[11px] mt-4 leading-relaxed max-w-xs">
+            לא רואה את האימייל? בדוק/בדקי גם בתיקיית הספאם.
+          </p>
+        </div>
+        <div className="px-6 pb-8 safe-bottom space-y-2">
+          <PrimaryButton onClick={resendConfirmation} loading={resending}>
+            שלח/י לי שוב את האימייל
+          </PrimaryButton>
+          <button onClick={() => { setPendingConfirmation(null); setMode("login"); }}
+            className="w-full text-gray-600 text-sm font-semibold py-2">
+            כבר אישרת? <span className="text-gray-900 underline">היכנס/י</span>
+          </button>
+        </div>
+      </Frame>
+    );
+  }
 
   // ── Landing ────────────────────────────────────────────────────────
   if (!mode) {
