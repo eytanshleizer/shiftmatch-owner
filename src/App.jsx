@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
 import SplashScreen          from "./components/SplashScreen";
 import AuthScreen            from "./components/AuthScreen";
+import VerifyEmailScreen     from "./components/VerifyEmailScreen";
 import EmptyState            from "./components/EmptyState";
 import WizardOnboarding      from "./components/WizardOnboarding";
 import Dashboard             from "./components/Dashboard";
@@ -132,6 +133,25 @@ export default function App() {
   );
 
   if (!session) return <AuthScreen />;
+
+  // If Supabase email confirmation is enabled (recommended) and the user
+  // hasn't clicked the link yet, hold them on the verification screen.
+  // When the project setting is OFF this branch is never hit because
+  // email_confirmed_at is auto-populated at sign-up.
+  if (session?.user && !session.user.email_confirmed_at) {
+    return (
+      <VerifyEmailScreen
+        user={session.user}
+        onConfirmed={async () => {
+          // Re-fetch the session so email_confirmed_at is fresh.
+          const { data } = await supabase.auth.refreshSession();
+          if (data?.session) setSession(data.session);
+          if (data?.user)    loadContext(data.user.id, data.user.email);
+        }}
+        onSignOut={signOut}
+      />
+    );
+  }
 
   if (invitation) {
     return (
