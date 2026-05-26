@@ -225,17 +225,28 @@ export default function WizardOnboarding({ user, onDone }) {
           </Step>
         )}
 
-        {stepId === "salary" && (
-          <Step title="כמה משלמים לשעה?" sub="לכל תפקיד שבחרת.">
-            <SalaryGrid
-              positions={d.positions}
-              counts={d.positionCounts}
-              salaries={d.positionSalaries}
-              onCounts={(c) => set({ positionCounts: c })}
-              onSalaries={(s) => set({ positionSalaries: s })}
-            />
-          </Step>
-        )}
+        {stepId === "salary" && (() => {
+          const missing = d.positions.filter((p) => !(d.positionSalaries[p] > 0));
+          return (
+            <Step title="כמה משלמים לשעה?" sub="מלא/י שכר לכל תפקיד כדי להמשיך.">
+              <SalaryGrid
+                positions={d.positions}
+                counts={d.positionCounts}
+                salaries={d.positionSalaries}
+                onCounts={(c) => set({ positionCounts: c })}
+                onSalaries={(s) => set({ positionSalaries: s })}
+              />
+              {missing.length > 0 && (
+                <div className="mt-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl p-3 flex items-start gap-2">
+                  <span className="text-base">⚠️</span>
+                  <p className="text-xs leading-relaxed">
+                    כדי להמשיך, מלא/י שכר לשעה עבור: <b>{missing.join(" · ")}</b>
+                  </p>
+                </div>
+              )}
+            </Step>
+          );
+        })()}
 
         {stepId === "shifts" && (
           <Step title="אילו משמרות צריך לכסות?" sub="ניתן לבחור כמה.">
@@ -258,7 +269,7 @@ export default function WizardOnboarding({ user, onDone }) {
               type="tel" inputMode="numeric" maxLength={10} dir="ltr" autoFocus
             />
             {d.whatsapp && !isValidIsraeliPhone(d.whatsapp) && (
-              <p className="text-amber-600 text-xs mt-2">מספר חייב להיות בין 9 ל-10 ספרות</p>
+              <p className="text-amber-600 text-xs mt-2">המספר חייב להתחיל ב-05 ולכלול 10 ספרות בסך הכל</p>
             )}
           </Step>
         )}

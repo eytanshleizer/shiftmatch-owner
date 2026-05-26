@@ -29,9 +29,10 @@ export function isValidIsraeliMobile(digits) {
 }
 
 /**
- * Returns true for any 9-10 digit Israeli phone (mobile or landline).
+ * Strict validator used by the recruitment WhatsApp field across the app —
+ * a number MUST be an Israeli mobile (05X + 8 more digits = 10 total).
+ * Per user request: phone must start with "05" and be exactly 10 digits.
  */
 export function isValidIsraeliPhone(digits) {
-  const d = normalizePhoneInput(digits);
-  return d.length === 9 || d.length === 10;
+  return isValidIsraeliMobile(digits);
 }

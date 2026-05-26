@@ -7,9 +7,9 @@ import {
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HomeTab — clean Fireberry-inspired white dashboard.
-// Cards on light gray background, big black "active listing" hero,
-// global search at top, quick KPIs and shortcuts.
+// HomeTab — Fireberry-inspired premium white dashboard.
+// Hierarchy:  greeting + restaurant pill  →  search bar (row below)  →
+//             big "active" hero  →  KPIs  →  next interview  →  details
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function HomeTab({ restaurant: r, onUpdate, onOpenSearch, onGoTab }) {
@@ -22,7 +22,6 @@ export default function HomeTab({ restaurant: r, onUpdate, onOpenSearch, onGoTab
 
   useEffect(() => {
     if (!r?.id) return;
-    // Applications + event analytics
     Promise.all([
       supabase.from("applications").select("id", { count: "exact", head: true })
         .eq("restaurant_id", r.id).eq("status", "new"),
@@ -65,27 +64,34 @@ export default function HomeTab({ restaurant: r, onUpdate, onOpenSearch, onGoTab
                        || (r?.position_types?.length || 0);
 
   return (
-    <div className="bg-gray-50 min-h-full pb-8 text-gray-900">
-      {/* ── Top search bar (always at the top of Home) ── */}
-      <div className="px-4 pt-16 pb-3 bg-white border-b border-gray-100">
+    <div className="bg-gray-50 min-h-full pb-24 text-gray-900">
+
+      {/* ── Greeting header (no search here — search lives in the row below) ── */}
+      <div className="px-5 pt-20 pb-4 bg-white border-b border-gray-100">
+        <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">שלום 👋</p>
+        <h1 className="text-2xl font-black text-gray-900 tracking-tight mt-1 truncate">{r?.name || "המסעדה שלי"}</h1>
+        {r?.city && <p className="text-gray-400 text-xs mt-0.5">{r.city}{r.area ? ` · ${r.area}` : ""}</p>}
+      </div>
+
+      {/* ── Search row (BELOW the greeting header, not on top of it) ── */}
+      <div className="px-4 pt-4">
         <button onClick={onOpenSearch}
-          className="w-full bg-gray-100 border border-gray-200 rounded-2xl px-4 py-3 flex items-center gap-2.5 active:bg-gray-200 transition-colors">
+          className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 flex items-center gap-2.5 active:bg-gray-50 shadow-sm transition-colors">
           <Search size={16} className="text-gray-500" />
-          <span className="text-gray-500 text-sm flex-1 text-right">חיפוש מועמדים, משרות, ראיונות...</span>
-          <span className="text-gray-400 text-[10px] font-semibold bg-white border border-gray-200 px-1.5 py-0.5 rounded">⌘K</span>
+          <span className="text-gray-400 text-sm flex-1 text-right">חיפוש מועמדים, משרות, ראיונות...</span>
         </button>
       </div>
 
-      <div className="px-4 pt-5 space-y-4">
+      <div className="px-4 pt-4 space-y-3">
 
-        {/* ── Active listing hero card ── */}
+        {/* ── Active listing hero ── */}
         <button onClick={toggleActive} disabled={toggling}
           className={`w-full rounded-3xl p-6 text-right transition-all active:scale-[0.99] ${
             r?.active
               ? "bg-gray-900 text-white shadow-xl shadow-gray-900/20"
-              : "bg-white border border-gray-200 text-gray-700"
+              : "bg-white border border-gray-200 text-gray-700 shadow-sm"
           }`}>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1.5">
                 {r?.active && (
@@ -108,8 +114,8 @@ export default function HomeTab({ restaurant: r, onUpdate, onOpenSearch, onGoTab
             <div className={`w-14 h-8 rounded-full flex items-center px-1 flex-shrink-0 ${
               r?.active ? "bg-white/20" : "bg-gray-200"
             }`} style={{ opacity: toggling ? 0.6 : 1 }}>
-              <div className={`w-6 h-6 rounded-full transition-transform duration-300 ${
-                r?.active ? "translate-x-6 bg-white" : "translate-x-0 bg-white"
+              <div className={`w-6 h-6 rounded-full transition-transform duration-300 bg-white ${
+                r?.active ? "translate-x-6" : "translate-x-0"
               }`} />
             </div>
           </div>
@@ -117,10 +123,10 @@ export default function HomeTab({ restaurant: r, onUpdate, onOpenSearch, onGoTab
 
         {/* ── KPI strip ── */}
         <div className="grid grid-cols-4 gap-2">
-          <KPI label="פניות"   value={appCount}     accent="bg-brand-100 text-brand-700" icon={<TrendingUp size={14} />} onClick={() => onGoTab?.("apps")} />
-          <KPI label="צפיות"   value={stats.views}  icon={<Eye size={14} />} />
-          <KPI label="WhatsApp" value={stats.whatsapp} accent="bg-green-100 text-green-700" icon={<MessageCircle size={14} />} />
-          <KPI label="שיחות"   value={stats.calls}  icon={<Phone size={14} />} />
+          <KPI label="פניות"    value={appCount}      accent="bg-brand-100 text-brand-700"   icon={<TrendingUp size={14} />} onClick={() => onGoTab?.("apps")} />
+          <KPI label="צפיות"    value={stats.views}   icon={<Eye size={14} />} />
+          <KPI label="WhatsApp" value={stats.whatsapp} accent="bg-green-100 text-green-700"  icon={<MessageCircle size={14} />} />
+          <KPI label="שיחות"    value={stats.calls}   icon={<Phone size={14} />} />
         </div>
 
         {/* ── Next interview ── */}
@@ -181,20 +187,25 @@ export default function HomeTab({ restaurant: r, onUpdate, onOpenSearch, onGoTab
           </div>
           <p className="text-gray-500 text-[11px] mb-3">מועמדים יצרו איתך קשר דרך המספר הזה</p>
           {editingWA ? (
-            <div className="flex gap-2">
-              <input value={waInput}
-                onChange={(e) => setWaInput(normalizePhoneInput(e.target.value))}
-                type="tel" inputMode="numeric" maxLength={10} dir="ltr" autoFocus
-                placeholder="0501234567"
-                className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900 text-left" />
-              <button onClick={saveWhatsApp}
-                disabled={!isValidIsraeliPhone(waInput)}
-                className="bg-gray-900 text-white px-4 py-2.5 rounded-xl text-sm font-bold active:bg-gray-800 disabled:opacity-40">
-                שמור
-              </button>
-              <button onClick={() => { setWaInput(r?.recruitment_whatsapp || r?.phone || ""); setEditingWA(false); }}
-                className="bg-gray-100 text-gray-500 px-3 py-2.5 rounded-xl text-sm">✕</button>
-            </div>
+            <>
+              <div className="flex gap-2">
+                <input value={waInput}
+                  onChange={(e) => setWaInput(normalizePhoneInput(e.target.value))}
+                  type="tel" inputMode="numeric" maxLength={10} dir="ltr" autoFocus
+                  placeholder="0501234567"
+                  className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900 text-left" />
+                <button onClick={saveWhatsApp}
+                  disabled={!isValidIsraeliPhone(waInput)}
+                  className="bg-gray-900 text-white px-4 py-2.5 rounded-xl text-sm font-bold active:bg-gray-800 disabled:opacity-40">
+                  שמור
+                </button>
+                <button onClick={() => { setWaInput(r?.recruitment_whatsapp || r?.phone || ""); setEditingWA(false); }}
+                  className="bg-gray-100 text-gray-500 px-3 py-2.5 rounded-xl text-sm">✕</button>
+              </div>
+              {waInput && !isValidIsraeliPhone(waInput) && (
+                <p className="text-amber-600 text-[11px] mt-2 font-semibold">המספר חייב להתחיל ב-05 ולכלול 10 ספרות</p>
+              )}
+            </>
           ) : (
             <p className="text-gray-900 font-bold text-lg" dir="ltr">
               {r?.recruitment_whatsapp || r?.phone || "—"}

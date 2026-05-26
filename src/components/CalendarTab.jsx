@@ -1,29 +1,43 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
-  Calendar, Plus, Clock, MapPin, Phone, X, Check, Loader2, ChevronLeft, ChevronRight, MoreVertical
+  Calendar as CalIcon, Plus, MapPin, Phone, X, Check, Loader2,
+  ChevronLeft, ChevronRight, MoreVertical, List as ListIcon, Grid3x3
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { can } from "../lib/permissions";
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CalendarTab — interview scheduler.
-// White card layout, month strip at top, agenda below.
+// CalendarTab — full month grid + agenda below.
+// Grid view shows a real calendar with day cells; dots indicate the count
+// of scheduled interviews on each day.  Tap a day to filter the agenda.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STATUS_META = {
-  scheduled: { label: "מתוכנן",  cls: "bg-blue-50 text-blue-700 border-blue-200" },
-  done:      { label: "בוצע",    cls: "bg-green-50 text-green-700 border-green-200" },
-  cancelled: { label: "בוטל",    cls: "bg-gray-100 text-gray-500 border-gray-200" },
-  no_show:   { label: "לא הגיע", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  scheduled: { label: "מתוכנן",   cls: "bg-blue-50 text-blue-700 border-blue-200" },
+  done:      { label: "בוצע",     cls: "bg-green-50 text-green-700 border-green-200" },
+  cancelled: { label: "בוטל",     cls: "bg-gray-100 text-gray-500 border-gray-200" },
+  no_show:   { label: "לא הגיע",  cls: "bg-amber-50 text-amber-700 border-amber-200" },
 };
 
+const DAYS_HE = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"];
+const MONTHS_HE = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+
 export default function CalendarTab({ restaurant, user, role = "owner" }) {
-  const canSchedule = can(role, "contact_candidates"); // recruiter+ can schedule
+  const canSchedule = can(role, "contact_candidates");
+
   const [items, setItems]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [showAdd, setShowAdd]   = useState(false);
   const [actionFor, setActionFor] = useState(null);
+
+  // Calendar navigation: currently displayed month + selected day.
+  const today = useMemo(() => {
+    const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }, []);
+  const [viewYear,  setViewYear]  = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [selectedDay, setSelectedDay] = useState(today.getTime()); // selected day timestamp (midnight)
 
   const load = async () => {
     if (!restaurant?.id) return;
@@ -39,19 +53,27 @@ export default function CalendarTab({ restaurant, user, role = "owner" }) {
 
   useEffect(() => { load(); }, [restaurant?.id]);
 
-  // Group by day-bucket
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const groups = items.reduce((acc, it) => {
-    const dt = new Date(it.scheduled_at);
-    const dayKey = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
-    if (!acc[dayKey]) acc[dayKey] = { date: dt, items: [] };
-    acc[dayKey].items.push(it);
-    return acc;
-  }, {});
-  const sortedDays = Object.values(groups).sort((a, b) => a.date - b.date);
+  // ── Group items by day-key for grid lookup ───────────────────────────
+  const byDayKey = useMemo(() => {
+    const m = {};
+    items.forEach((it) => {
+      const dt = new Date(it.scheduled_at);
+      const k = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+      (m[k] ||= []).push(it);
+    });
+    return m;
+  }, [items]);
 
-  const upcomingCount = items.filter((it) => new Date(it.scheduled_at) >= now && it.status === "scheduled").length;
+  // ── Build month grid (always 6 rows for stable layout) ──────────────
+  const grid = useMemo(() => {
+    const first = new Date(viewYear, viewMonth, 1);
+    const offset = first.getDay(); // 0=Sun
+    const start = new Date(first); start.setDate(start.getDate() - offset);
+    return Array.from({ length: 42 }, (_, i) => {
+      const d = new Date(start); d.setDate(start.getDate() + i);
+      return d;
+    });
+  }, [viewYear, viewMonth]);
 
   const setStatus = async (id, status) => {
     await supabase.from("interviews").update({ status }).eq("id", id);
@@ -64,8 +86,29 @@ export default function CalendarTab({ restaurant, user, role = "owner" }) {
     load(); setActionFor(null);
   };
 
+  const prevMonth = () => {
+    let m = viewMonth - 1, y = viewYear;
+    if (m < 0) { m = 11; y -= 1; }
+    setViewMonth(m); setViewYear(y);
+  };
+  const nextMonth = () => {
+    let m = viewMonth + 1, y = viewYear;
+    if (m > 11) { m = 0; y += 1; }
+    setViewMonth(m); setViewYear(y);
+  };
+
+  // ── Items for the selected day ──
+  const selDate = new Date(selectedDay);
+  const selKey  = `${selDate.getFullYear()}-${selDate.getMonth()}-${selDate.getDate()}`;
+  const dayItems = (byDayKey[selKey] || []).slice().sort((a, b) =>
+    new Date(a.scheduled_at) - new Date(b.scheduled_at));
+
+  const upcomingCount = items.filter((it) =>
+    new Date(it.scheduled_at) >= new Date() && it.status === "scheduled").length;
+
   return (
-    <div className="pb-24 bg-white min-h-full text-gray-900">
+    <div className="bg-gray-50 min-h-full pb-24 text-gray-900">
+
       {/* Header */}
       <div className="px-5 pt-20 pb-3 flex items-end justify-between">
         <div>
@@ -82,24 +125,101 @@ export default function CalendarTab({ restaurant, user, role = "owner" }) {
         )}
       </div>
 
-      <div className="px-4 pt-3">
-        {loading ? (
-          <div className="flex justify-center py-12"><Loader2 size={26} className="animate-spin text-gray-400" /></div>
-        ) : sortedDays.length === 0 ? (
-          <EmptyState canSchedule={canSchedule} onAdd={() => setShowAdd(true)} />
-        ) : (
-          <div className="space-y-6 mt-2">
-            {sortedDays.map((g) => (
-              <DayGroup key={g.date.toISOString()} date={g.date} today={today} items={g.items}
-                onAction={(it) => canSchedule && setActionFor(it)} />
+      {/* ── Month calendar grid ── */}
+      <div className="px-4 pt-2">
+        <div className="bg-white border border-gray-200 rounded-3xl p-4 shadow-sm">
+          {/* Month nav */}
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={prevMonth}
+              className="w-8 h-8 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center active:bg-gray-100">
+              <ChevronRight size={14} className="text-gray-700" />
+            </button>
+            <button onClick={() => {
+              setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); setSelectedDay(today.getTime());
+            }} className="font-black text-gray-900 text-base">
+              {MONTHS_HE[viewMonth]} {viewYear}
+            </button>
+            <button onClick={nextMonth}
+              className="w-8 h-8 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center active:bg-gray-100">
+              <ChevronLeft size={14} className="text-gray-700" />
+            </button>
+          </div>
+
+          {/* Weekday header */}
+          <div className="grid grid-cols-7 mb-1">
+            {DAYS_HE.map((d) => (
+              <div key={d} className="text-center text-gray-400 text-[10px] font-bold py-1">{d}</div>
             ))}
           </div>
+
+          {/* Day cells */}
+          <div className="grid grid-cols-7 gap-1">
+            {grid.map((d, idx) => {
+              const inMonth = d.getMonth() === viewMonth;
+              const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+              const dayItemsCount = (byDayKey[dayKey] || []).length;
+              const isToday  = d.getTime() === today.getTime();
+              const isSelected = d.getTime() === selectedDay;
+              return (
+                <button key={idx} onClick={() => setSelectedDay(d.getTime())}
+                  className={`aspect-square rounded-xl flex flex-col items-center justify-center relative transition-colors ${
+                    isSelected
+                      ? "bg-gray-900 text-white shadow-md"
+                      : isToday
+                        ? "bg-blue-50 text-blue-700 border border-blue-200"
+                        : inMonth
+                          ? "bg-white text-gray-900 active:bg-gray-50"
+                          : "bg-transparent text-gray-300"
+                  }`}>
+                  <span className={`text-sm font-bold ${isSelected ? "text-white" : ""}`}>{d.getDate()}</span>
+                  {dayItemsCount > 0 && (
+                    <div className="flex gap-0.5 mt-1">
+                      {Array.from({ length: Math.min(dayItemsCount, 3) }).map((_, i) => (
+                        <span key={i} className={`w-1 h-1 rounded-full ${isSelected ? "bg-white" : "bg-brand-500"}`} />
+                      ))}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Agenda for the selected day ── */}
+      <div className="px-4 pt-4 space-y-2">
+        <div className="flex items-center justify-between px-1 mb-1">
+          <p className="text-gray-500 text-xs font-bold uppercase tracking-wide">
+            {selDate.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })}
+          </p>
+          <span className="text-gray-400 text-[11px] font-semibold">{dayItems.length} ראיונות</span>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 size={22} className="animate-spin text-gray-400" /></div>
+        ) : dayItems.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow-sm">
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center mb-3">
+              <CalIcon size={20} className="text-gray-400" />
+            </div>
+            <p className="text-gray-900 font-bold text-sm">אין ראיונות ביום זה</p>
+            {canSchedule && (
+              <button onClick={() => setShowAdd(true)}
+                className="mt-3 text-gray-900 text-xs font-bold underline">קבע ראיון חדש</button>
+            )}
+          </div>
+        ) : (
+          dayItems.map((it) => (
+            <InterviewCard key={it.id} it={it}
+              onAction={() => canSchedule && setActionFor(it)} />
+          ))
         )}
       </div>
 
       {showAdd && (
         <ScheduleModal
           restaurant={restaurant} user={user}
+          defaultDate={new Date(selectedDay)}
           onClose={() => setShowAdd(false)}
           onSaved={() => { setShowAdd(false); load(); }}
         />
@@ -117,28 +237,6 @@ export default function CalendarTab({ restaurant, user, role = "owner" }) {
   );
 }
 
-// ── Day group card ──
-function DayGroup({ date, today, items }) {
-  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const isToday = dayStart === today;
-  const isPast  = dayStart < today;
-  const heb = date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2.5 px-1">
-        <p className={`text-sm font-bold ${isToday ? "text-gray-900" : isPast ? "text-gray-400" : "text-gray-700"}`}>
-          {isToday ? "היום · " : ""}{heb}
-        </p>
-        {isToday && <span className="text-[10px] font-bold text-white bg-gray-900 px-2 py-0.5 rounded-full">היום</span>}
-      </div>
-      <div className="space-y-2">
-        {items.map((it) => <InterviewCard key={it.id} it={it} />)}
-      </div>
-    </div>
-  );
-}
-
 function InterviewCard({ it, onAction }) {
   const dt = new Date(it.scheduled_at);
   const time = dt.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
@@ -150,25 +248,19 @@ function InterviewCard({ it, onAction }) {
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
       <div className="flex items-start gap-3">
-        {/* Time pill */}
         <div className="bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-2 text-center min-w-[60px] flex-shrink-0">
           <p className="text-gray-900 font-black text-base leading-none">{time}</p>
           <p className="text-gray-500 text-[10px] mt-0.5">{it.duration_min || 30} ד׳</p>
         </div>
-
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <p className="text-gray-900 font-bold text-sm truncate">
-              {it.candidate_name || "מועמד/ת"}
-            </p>
+            <p className="text-gray-900 font-bold text-sm truncate">{it.candidate_name || "מועמד/ת"}</p>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${sMeta.cls}`}>
               {sMeta.label}
             </span>
           </div>
           {it.location && (
-            <p className="text-gray-500 text-xs flex items-center gap-1 mt-1">
-              <MapPin size={11} />{it.location}
-            </p>
+            <p className="text-gray-500 text-xs flex items-center gap-1 mt-1"><MapPin size={11} />{it.location}</p>
           )}
           {it.notes && (
             <p className="text-gray-600 text-xs mt-1.5 line-clamp-2">{it.notes}</p>
@@ -199,28 +291,9 @@ function InterviewCard({ it, onAction }) {
   );
 }
 
-function EmptyState({ canSchedule, onAdd }) {
-  return (
-    <div className="bg-gray-50 border border-gray-200 rounded-3xl p-10 text-center mt-6">
-      <div className="w-16 h-16 mx-auto rounded-3xl bg-white border border-gray-200 flex items-center justify-center mb-4 shadow-sm">
-        <Calendar size={26} className="text-gray-400" />
-      </div>
-      <p className="text-gray-900 font-bold text-base">אין ראיונות עדיין</p>
-      <p className="text-gray-500 text-sm mt-1.5 leading-relaxed max-w-xs mx-auto">
-        תזמן/י את הראיון הראשון שלך — אנחנו נשמור הכל מסודר במקום אחד.
-      </p>
-      {canSchedule && (
-        <button onClick={onAdd}
-          className="mt-5 bg-gray-900 text-white font-bold text-sm px-5 py-2.5 rounded-full active:bg-gray-800 inline-flex items-center gap-1.5">
-          <Plus size={14} />קבע ראיון
-        </button>
-      )}
-    </div>
-  );
-}
+// ── Modals (unchanged from previous version) ──────────────────────────────
 
-// ── Schedule new interview modal ──
-function ScheduleModal({ restaurant, user, onClose, onSaved }) {
+function ScheduleModal({ restaurant, user, defaultDate, onClose, onSaved }) {
   const [name, setName]   = useState("");
   const [phone, setPhone] = useState("");
   const [date, setDate]   = useState("");
@@ -231,10 +304,9 @@ function ScheduleModal({ restaurant, user, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
-  // Default to today 17:00 if empty
   useEffect(() => {
     if (!date) {
-      const d = new Date();
+      const d = defaultDate || new Date();
       setDate(d.toISOString().slice(0, 10));
     }
     if (!time) setTime("17:00");
@@ -242,9 +314,9 @@ function ScheduleModal({ restaurant, user, onClose, onSaved }) {
 
   const submit = async () => {
     setErr("");
-    if (!name.trim())                    return setErr("חסר שם מועמד");
-    if (phone && !isValidIsraeliPhone(phone)) return setErr("מספר טלפון לא תקין");
-    if (!date || !time)                  return setErr("חסר תאריך/שעה");
+    if (!name.trim()) return setErr("חסר שם מועמד");
+    if (phone && !isValidIsraeliPhone(phone)) return setErr("המספר חייב להתחיל ב-05 ולכלול 10 ספרות");
+    if (!date || !time) return setErr("חסר תאריך/שעה");
 
     const scheduled_at = new Date(`${date}T${time}:00`).toISOString();
 
@@ -265,8 +337,7 @@ function ScheduleModal({ restaurant, user, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end justify-center"
-      onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={onClose}>
       <div className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-8 max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
@@ -283,7 +354,7 @@ function ScheduleModal({ restaurant, user, onClose, onSaved }) {
             className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-3 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900" />
         </FormField>
 
-        <FormField label="טלפון (אופציונלי)">
+        <FormField label="טלפון (אופציונלי)" hint="חייב להתחיל ב-05 ולכלול 10 ספרות">
           <input value={phone} onChange={(e) => setPhone(normalizePhoneInput(e.target.value))}
             type="tel" inputMode="numeric" maxLength={10} dir="ltr"
             placeholder="0501234567"
@@ -306,12 +377,8 @@ function ScheduleModal({ restaurant, user, onClose, onSaved }) {
             {[15, 30, 45, 60].map((m) => (
               <button key={m} onClick={() => setDur(m)}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors border ${
-                  dur === m
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "bg-white text-gray-700 border-gray-200 active:bg-gray-50"
-                }`}>
-                {m} ד׳
-              </button>
+                  dur === m ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-200 active:bg-gray-50"
+                }`}>{m} ד׳</button>
             ))}
           </div>
         </FormField>
@@ -330,13 +397,11 @@ function ScheduleModal({ restaurant, user, onClose, onSaved }) {
         </FormField>
 
         {err && (
-          <div className="bg-red-50 border border-red-100 text-red-700 text-xs font-semibold rounded-xl px-4 py-2.5 text-center mb-3">
-            {err}
-          </div>
+          <div className="bg-red-50 border border-red-100 text-red-700 text-xs font-semibold rounded-xl px-4 py-2.5 text-center mb-3">{err}</div>
         )}
 
         <button onClick={submit} disabled={saving}
-          className="w-full bg-gray-900 text-white font-bold py-4 rounded-full text-base active:bg-gray-800 disabled:opacity-40 flex items-center justify-center gap-2 shadow-md shadow-gray-900/10">
+          className="w-full bg-gray-900 text-white font-bold py-4 rounded-full active:bg-gray-800 disabled:opacity-40 flex items-center justify-center gap-2 shadow-md">
           {saving ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
           קביעת הראיון
         </button>
@@ -345,21 +410,20 @@ function ScheduleModal({ restaurant, user, onClose, onSaved }) {
   );
 }
 
-function FormField({ label, children }) {
+function FormField({ label, hint, children }) {
   return (
     <div className="mb-4">
       <label className="text-gray-600 text-[11px] font-bold uppercase tracking-wide block mb-1.5">{label}</label>
       {children}
+      {hint && <p className="text-gray-400 text-[10px] mt-1">{hint}</p>}
     </div>
   );
 }
 
-// ── Action sheet for an existing interview ──
 function ActionSheet({ interview, onClose, onStatus, onDelete }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end" onClick={onClose}>
-      <div className="bg-white w-full rounded-t-3xl p-4 pb-8 max-w-md mx-auto"
-        onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white w-full rounded-t-3xl p-4 pb-8 max-w-md mx-auto" onClick={(e) => e.stopPropagation()}>
         <p className="text-center text-gray-500 text-xs py-2 border-b border-gray-100">
           {interview.candidate_name || "ראיון"}
         </p>
@@ -385,8 +449,7 @@ function ActionSheet({ interview, onClose, onStatus, onDelete }) {
           className="w-full py-3 text-red-600 font-semibold text-right px-3 active:bg-red-50 border-t border-gray-100">
           מחיקה
         </button>
-        <button onClick={onClose}
-          className="w-full py-3 text-gray-500 font-semibold mt-1">ביטול</button>
+        <button onClick={onClose} className="w-full py-3 text-gray-500 font-semibold mt-1">ביטול</button>
       </div>
     </div>
   );

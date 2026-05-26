@@ -278,7 +278,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
           <Field
             label="וואטסאפ לגיוס"
             hint={form.recruitment_whatsapp && !isValidIsraeliPhone(form.recruitment_whatsapp)
-              ? "מספר חייב להיות בין 9 ל-10 ספרות"
+              ? "המספר חייב להתחיל ב-05 ולכלול 10 ספרות"
               : "המספר שמופיע למלצרים — מומלץ ייעודי"}
           >
             <input
