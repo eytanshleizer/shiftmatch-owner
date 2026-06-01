@@ -1,8 +1,21 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import { Phone, MapPin, Clock, Loader2, ChevronRight, ArrowRight, Target, Calendar as CalIcon } from "lucide-react";
+import { Phone, MapPin, Clock, Loader2, ChevronRight, ArrowRight, Target, Calendar as CalIcon, Check, X, Lock, RotateCcw } from "lucide-react";
 import { computeMatch, scoreColor } from "../lib/matching";
+import { getJobRequirements, computeReqMatch } from "../lib/requirements";
 import { can } from "../lib/permissions";
+import { expLabel } from "../lib/gender";
+import { locationLabel } from "../lib/location";
+
+// Combined display score for a candidate: prefer the requirement-match score
+// the waiter generated at apply time (mandatory shifts + commitment), then fall
+// back to the screening-question score.
+function displayScore(restaurant, app) {
+  if (app?.match_score != null) return app.match_score;
+  const qs = restaurant?.screening_questions || [];
+  if (qs.length) return computeMatch(restaurant, qs, app?.answers || {}).score;
+  return null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ApplicationsTab — white Fireberry-style.  Lists candidates with match-score
@@ -12,6 +25,8 @@ import { can } from "../lib/permissions";
 const STATUS = {
   new:       { label: "חדש",  cls: "bg-blue-50 text-blue-700 border-blue-200" },
   viewed:    { label: "נצפה", cls: "bg-gray-100 text-gray-600 border-gray-200" },
+  accepted:  { label: "אושר", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  rejected:  { label: "נדחה", cls: "bg-red-50 text-red-600 border-red-200" },
   contacted: { label: "פנית", cls: "bg-green-50 text-green-700 border-green-200" },
 };
 
@@ -59,16 +74,13 @@ export default function ApplicationsTab({ restaurant, role = "owner", onSchedule
       }
 
       // Sort: new first, then by match score, then by date.
-      const questions = restaurant?.screening_questions || [];
       const sorted = [...withProfiles].sort((a, b) => {
         const aNew = a.status === "new" ? 0 : 1;
         const bNew = b.status === "new" ? 0 : 1;
         if (aNew !== bNew) return aNew - bNew;
-        if (questions.length) {
-          const sA = computeMatch(restaurant, questions, a.answers || {}).score ?? -1;
-          const sB = computeMatch(restaurant, questions, b.answers || {}).score ?? -1;
-          if (sA !== sB) return sB - sA;
-        }
+        const sA = displayScore(restaurant, a) ?? -1;
+        const sB = displayScore(restaurant, b) ?? -1;
+        if (sA !== sB) return sB - sA;
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
 
@@ -87,10 +99,15 @@ export default function ApplicationsTab({ restaurant, role = "owner", onSchedule
     setSelected(app);
   };
 
-  const contact = async (app) => {
-    await supabase.from("applications").update({ status: "contacted" }).eq("id", app.id);
-    setApps((prev) => prev.map((a) => (a.id === app.id ? { ...a, status: "contacted" } : a)));
+  // Update an application's status both in the DB and in local state (list + open detail).
+  const setStatus = async (app, status) => {
+    await supabase.from("applications").update({ status }).eq("id", app.id);
+    setApps((prev) => prev.map((a) => (a.id === app.id ? { ...a, status } : a)));
+    setSelected((cur) => (cur && cur.id === app.id ? { ...cur, status } : cur));
   };
+  const accept  = (app) => setStatus(app, "accepted");
+  const reject  = (app) => setStatus(app, "rejected");
+  const contact = (app) => setStatus(app, "contacted");
 
   // ── Detail view ──
   if (selected) {
@@ -122,7 +139,7 @@ export default function ApplicationsTab({ restaurant, role = "owner", onSchedule
                 <h2 className="text-gray-900 font-black text-xl">{p.name || "מועמד"}</h2>
                 {p.city && (
                   <p className="text-gray-500 text-sm flex items-center gap-1 mt-0.5">
-                    <MapPin size={12} />{p.city}
+                    <MapPin size={12} />{locationLabel({ city: p.city, lat: p.lat, lng: p.lng })}
                   </p>
                 )}
                 <span className={`inline-block mt-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${STATUS[selected.status]?.cls || STATUS.new.cls}`}>
@@ -132,10 +149,52 @@ export default function ApplicationsTab({ restaurant, role = "owner", onSchedule
             </div>
 
             <div className="grid grid-cols-2 gap-2.5">
-              {p.experience && <DetailTile label="ניסיון" value={p.experience} />}
+              {p.experience && <DetailTile label="ניסיון" value={expLabel(p.experience, p.gender)} />}
               {p.min_hourly_rate > 0 && <DetailTile label="ציפיית שכר" value={`₪${p.min_hourly_rate}/שעה`} />}
             </div>
           </div>
+
+          {/* Willingness vs the job's hard requirements (mandatory shifts + commitment) */}
+          {(() => {
+            const { list } = getJobRequirements(restaurant);
+            if (!list.length) return null;
+            const answers = selected.answers || {};
+            const { score, perReq } = computeReqMatch(restaurant, answers);
+            const sc = scoreColor(score);
+            return (
+              <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                    <Target size={11} />התאמה לדרישות המשרה
+                  </p>
+                  {score != null && (
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-bold rounded-full px-2.5 py-1 ${sc.bg} ${sc.text}`}>
+                      {score}%
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {list.map((r) => {
+                    const status = perReq[r.key];
+                    const dot = status === "match" ? "🟢" : status === "miss" ? "🔴" : "⚫";
+                    const txt = status === "match" ? "מוכן/ה" : status === "miss" ? "לא מוכן/ה" : "לא נשאל/ה";
+                    return (
+                      <div key={r.key} className="flex items-center justify-between gap-2">
+                        <span className="text-sm text-gray-700 flex items-center gap-1.5">
+                          <span className="text-[10px]">{dot}</span>
+                          <span>{r.emoji}</span>{r.label}
+                        </span>
+                        <span className={`text-xs font-bold ${
+                          status === "match" ? "text-green-600" : status === "miss" ? "text-red-500" : "text-gray-400"
+                        }`}>{txt}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-gray-400 mt-3">🟢 מוכן/ה · 🔴 לא מוכן/ה · ⚫ לא נשאל/ה</p>
+              </div>
+            );
+          })()}
 
           {p.shifts?.length > 0 && (
             <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
@@ -200,8 +259,22 @@ export default function ApplicationsTab({ restaurant, role = "owner", onSchedule
             );
           })()}
 
-          {/* CTA */}
-          {canContact ? (
+          {/* CTA — contact details are gated behind an accept/reject decision */}
+          {!canContact ? (
+            <div className="bg-gray-100 border border-gray-200 rounded-2xl p-3 text-center text-gray-500 text-xs">
+              🔒 התפקיד שלך אינו מאפשר יצירת קשר עם מועמדים
+            </div>
+          ) : selected.status === "rejected" ? (
+            <div className="space-y-2.5 pt-1">
+              <div className="bg-red-50 border border-red-100 rounded-2xl p-3 text-center text-red-600 text-xs font-semibold">
+                ❌ דחית את המועמד/ת — פרטי ההתקשרות מוסתרים
+              </div>
+              <button onClick={() => accept(selected)}
+                className="w-full bg-white border border-gray-200 text-gray-700 font-bold py-3 rounded-full flex items-center justify-center gap-2 active:bg-gray-50 text-sm shadow-sm">
+                <RotateCcw size={15} />ביטול הדחייה
+              </button>
+            </div>
+          ) : (selected.status === "accepted" || selected.status === "contacted") ? (
             <>
               <div className="flex gap-2.5 pt-1">
                 {p.phone && (
@@ -225,8 +298,20 @@ export default function ApplicationsTab({ restaurant, role = "owner", onSchedule
               )}
             </>
           ) : (
-            <div className="bg-gray-100 border border-gray-200 rounded-2xl p-3 text-center text-gray-500 text-xs">
-              🔒 התפקיד שלך אינו מאפשר יצירת קשר עם מועמדים
+            <div className="space-y-3 pt-1">
+              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 text-center text-amber-700 text-xs flex items-center justify-center gap-1.5">
+                <Lock size={12} />פרטי ההתקשרות יחשפו לאחר אישור המועמד/ת
+              </div>
+              <div className="flex gap-2.5">
+                <button onClick={() => accept(selected)}
+                  className="flex-1 bg-emerald-600 text-white font-bold py-3.5 rounded-full flex items-center justify-center gap-2 active:bg-emerald-700 shadow-md text-sm">
+                  <Check size={16} />אישור
+                </button>
+                <button onClick={() => reject(selected)}
+                  className="flex-1 bg-white border border-gray-200 text-gray-700 font-bold py-3.5 rounded-full flex items-center justify-center gap-2 active:bg-gray-50 shadow-sm text-sm">
+                  <X size={16} />דחייה
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -280,9 +365,7 @@ export default function ApplicationsTab({ restaurant, role = "owner", onSchedule
           const s = STATUS[app.status] || STATUS.new;
           const isNew = app.status === "new";
           const ago = formatAgo(app.created_at);
-          const { score } = restaurant?.screening_questions?.length
-            ? computeMatch(restaurant, restaurant.screening_questions, app.answers || {})
-            : { score: null };
+          const score = displayScore(restaurant, app);
           const sc = scoreColor(score);
           return (
             <div key={app.id} onClick={() => open(app)}
@@ -310,8 +393,8 @@ export default function ApplicationsTab({ restaurant, role = "owner", onSchedule
                   </div>
                 </div>
                 <p className="text-gray-500 text-xs mt-0.5 truncate">
-                  {p.experience || ""}
-                  {p.city ? ` · ${p.city}` : ""}
+                  {expLabel(p.experience, p.gender)}
+                  {p.city ? ` · ${locationLabel({ city: p.city, lat: p.lat, lng: p.lng })}` : ""}
                   {p.min_hourly_rate > 0 ? ` · ₪${p.min_hourly_rate}/שעה` : ""}
                 </p>
                 {ago && <p className="text-gray-400 text-[10px] mt-1">⏱ {ago}</p>}

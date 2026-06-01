@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import { Loader2, ChevronLeft, Eye, EyeOff, AlertTriangle } from "lucide-react";
+import { Loader2, ChevronLeft, Eye, EyeOff, AlertTriangle, Check } from "lucide-react";
 import { logEvent } from "../lib/tracking";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,7 +42,23 @@ export default function AuthScreen() {
   // "check your inbox" panel + a resend button instead of leaving them
   // staring at the form with no feedback.
   const [pendingConfirmation, setPendingConfirmation] = useState(null); // { email } or null
-  const [resending, setResending] = useState(false);
+  const [resending, setResending]   = useState(false);
+  const [resentAt,  setResentAt]    = useState(null);
+  const [checking,  setChecking]    = useState(false);
+
+  // Auto-poll while confirmation is pending — same mechanic as VerifyEmailScreen
+  useEffect(() => {
+    if (!pendingConfirmation) return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user?.email_confirmed_at) {
+        // Email confirmed — force a fresh session load so App.jsx takes over
+        await supabase.auth.refreshSession();
+        window.location.reload();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [pendingConfirmation]);
 
   const submit = async () => {
     setError(""); setLoading(true);
@@ -126,18 +142,24 @@ export default function AuthScreen() {
       }
     } catch (e) {
       const msg = e?.message || "";
-      setError(
-        msg === "PW_SHORT"          ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
-        msg === "NAME_REQ"          ? "חסר שם מלא" :
-        msg === "REST_REQ"          ? "חסר שם המסעדה" :
-        msg === "CITY_REQ"          ? "חסר שם העיר" :
-        msg === "RESTAURANT_TAKEN"  ? "מסעדה בשם הזה בעיר הזו כבר רשומה. אם זו המסעדה שלך, פנה/י לתמיכה." :
-        msg === "Invalid login credentials" ? "אימייל או סיסמה שגויים" :
-        msg === "Email not confirmed"       ? "החשבון עדיין לא אומת. בדוק/י את האמייל ולחצ/י על קישור האישור." :
-        msg === "User already registered"   ? "המשתמש כבר רשום — התחבר/י" :
-        /Password/i.test(msg) ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
-        msg || "שגיאה — נסה שוב"
-      );
+      // "Email not confirmed" during login → show the resend screen instead of
+      // a dead-end error message.  The user can resend the confirmation email
+      // from there and try again.
+      if (msg === "Email not confirmed") {
+        setPendingConfirmation({ email });
+      } else {
+        setError(
+          msg === "PW_SHORT"          ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
+          msg === "NAME_REQ"          ? "חסר שם מלא" :
+          msg === "REST_REQ"          ? "חסר שם המסעדה" :
+          msg === "CITY_REQ"          ? "חסר שם העיר" :
+          msg === "RESTAURANT_TAKEN"  ? "מסעדה בשם הזה בעיר הזו כבר רשומה. אם זו המסעדה שלך, פנה/י לתמיכה." :
+          msg === "Invalid login credentials" ? "אימייל או סיסמה שגויים" :
+          msg === "User already registered"   ? "המשתמש כבר רשום — התחבר/י" :
+          /Password/i.test(msg) ? `סיסמה חייבת להיות לפחות ${MIN_PW} תווים` :
+          msg || "שגיאה — נסה שוב"
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -148,9 +170,21 @@ export default function AuthScreen() {
     setResending(true);
     await supabase.auth.resend({ type: "signup", email: pendingConfirmation.email });
     setResending(false);
+    setResentAt(Date.now());
+    setTimeout(() => setResentAt(null), 10000);
   };
 
-  // ── Post-signup: email confirmation pending ────────────────────────
+  const checkNow = async () => {
+    setChecking(true);
+    const { data } = await supabase.auth.getUser();
+    setChecking(false);
+    if (data?.user?.email_confirmed_at) {
+      await supabase.auth.refreshSession();
+      window.location.reload();
+    }
+  };
+
+  // ── Post-signup / post-login: email confirmation pending ──────────
   if (pendingConfirmation) {
     return (
       <Frame>
@@ -163,16 +197,40 @@ export default function AuthScreen() {
             שלחנו אימייל ל-<b className="text-gray-900" dir="ltr">{pendingConfirmation.email}</b> עם
             קישור לאישור החשבון. לחצ/י עליו כדי להמשיך.
           </p>
+
+          {/* Polling indicator */}
+          <div className="mt-5 bg-gray-50 border border-gray-200 rounded-full px-3.5 py-1.5 flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-70" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+            </span>
+            <span className="text-gray-700 text-[11px] font-bold">בודק כל 5 שניות</span>
+          </div>
+
           <p className="text-gray-400 text-[11px] mt-4 leading-relaxed max-w-xs">
             לא רואה את האימייל? בדוק/בדקי גם בתיקיית הספאם.
           </p>
         </div>
         <div className="px-6 pb-8 safe-bottom space-y-2">
-          <PrimaryButton onClick={resendConfirmation} loading={resending}>
-            שלח/י לי שוב את האימייל
+          {/* Manual check */}
+          <PrimaryButton onClick={checkNow} loading={checking}>
+            {checking ? "בודק..." : "בדוק עכשיו"}
           </PrimaryButton>
+
+          {/* Resend */}
+          <button
+            onClick={resendConfirmation}
+            disabled={resending || !!resentAt}
+            className="w-full bg-gray-100 text-gray-900 font-semibold py-3 rounded-full text-sm active:bg-gray-200 disabled:opacity-50 flex items-center justify-center gap-2">
+            {resending
+              ? <><Loader2 size={14} className="animate-spin" />שולח...</>
+              : resentAt
+                ? <><Check size={14} className="text-green-600" />אימייל נשלח שוב</>
+                : "שלח/י לי שוב את האימייל"}
+          </button>
+
           <button onClick={() => { setPendingConfirmation(null); setMode("login"); }}
-            className="w-full text-gray-600 text-sm font-semibold py-2">
+            className="w-full text-gray-500 text-sm font-semibold py-2">
             כבר אישרת? <span className="text-gray-900 underline">היכנס/י</span>
           </button>
         </div>

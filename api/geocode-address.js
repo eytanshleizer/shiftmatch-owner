@@ -17,15 +17,19 @@ export default async function handler(req, res) {
     try {
       const q = encodeURIComponent(`${address || ""}, ${city || "Israel"}`);
       const nomRes = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1`,
+        `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=he&q=${q}&limit=1`,
         { headers: { Accept: "application/json" } }
       );
       const arr = await nomRes.json();
       if (arr?.[0]) {
+        const a = arr[0].address || {};
+        const detectedCity =
+          a.city || a.town || a.village || a.municipality || a.suburb || "";
         return res.status(200).json({
           lat: Number(arr[0].lat),
           lng: Number(arr[0].lon),
           verified_address: arr[0].display_name,
+          city: detectedCity,
           source: "nominatim",
         });
       }

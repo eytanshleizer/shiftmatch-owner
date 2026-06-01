@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Users, Store, Download, RefreshCw, Search, MessageCircle, TrendingUp, Eye, Phone } from "lucide-react";
+import { expLabel } from "../lib/gender";
 
 const ADMIN_KEY = "shiftmatch-admin-2026";
 
@@ -230,7 +231,7 @@ function WaitersTable({ rows }) {
               <Td className="font-mono">{w.phone}</Td>
               <Td>{w.city}</Td>
               <Td>{w.position_types?.join(", ") || "—"}</Td>
-              <Td>{w.experience}</Td>
+              <Td>{expLabel(w.experience, w.gender)}</Td>
               <Td>{w.min_hourly_rate ? `₪${w.min_hourly_rate}` : "—"}</Td>
               <Td>{w.shifts?.join(", ") || "—"}</Td>
               <Td className="text-center font-bold text-brand-400">{w.total_messages_sent}</Td>

@@ -36,6 +36,7 @@ export default function App() {
   const [membership, setMembership] = useState(null);
   const [invitation, setInvitation] = useState(null);
   const [loading, setLoading]       = useState(true);
+  const [profileRole, setProfileRole] = useState(null);
 
   // Wizard open/closed state — independent from "do I have a restaurant".
   // Persisted in sessionStorage so a page refresh while filling out the
@@ -51,7 +52,7 @@ export default function App() {
   }, [wizardOpen]);
 
   const resetState = () => {
-    setRestaurant(null); setMembership(null); setInvitation(null); setWizardOpen(false);
+    setRestaurant(null); setMembership(null); setInvitation(null); setWizardOpen(false); setProfileRole(null);
   };
 
   const signOut = async () => {
@@ -62,6 +63,15 @@ export default function App() {
   const loadContext = async (uid, email) => {
     setLoading(true);
     resetState();
+
+    // Check if this user is actually a waiter — if so, we must not let them
+    // through the restaurant setup flow.
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", uid)
+      .maybeSingle();
+    if (prof?.role) setProfileRole(prof.role);
 
     const { data: memberships } = await supabase
       .from("restaurant_members")
@@ -133,6 +143,31 @@ export default function App() {
   );
 
   if (!session) return <AuthScreen />;
+
+  // Wrong app — this is a waiter account. Don't show restaurant setup.
+  if (profileRole === "waitress") {
+    return (
+      <div className="h-full bg-white flex flex-col items-center justify-center px-6 text-center" dir="rtl">
+        <div className="text-5xl mb-4">🧑‍🍳</div>
+        <h1 className="text-2xl font-black text-gray-900 mb-2">זה האפליקציה למסעדות</h1>
+        <p className="text-gray-500 text-sm mb-8 max-w-xs leading-relaxed">
+          החשבון שלך הוא חשבון מלצר/ית. השתמש/י באפליקציית ShiftMatch למחפשי עבודה.
+        </p>
+        <a
+          href="https://shiftmatch-waiter.vercel.app"
+          className="w-full max-w-xs bg-brand-500 text-white font-bold py-4 rounded-2xl text-base flex items-center justify-center gap-2 shadow-lg"
+        >
+          עבור/י לאפליקציית המלצרים →
+        </a>
+        <button
+          onClick={signOut}
+          className="mt-4 text-gray-500 text-sm font-semibold py-2"
+        >
+          התנתק/י
+        </button>
+      </div>
+    );
+  }
 
   // If Supabase email confirmation is enabled (recommended) and the user
   // hasn't clicked the link yet, hold them on the verification screen.

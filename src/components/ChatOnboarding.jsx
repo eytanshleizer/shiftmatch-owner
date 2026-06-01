@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { Send, ChevronLeft, Sparkles, MapPin, Loader2, Check } from "lucide-react";
 import { logEvent } from "../lib/tracking";
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
+import { cleanCity, isTelAviv, telAvivZone } from "../lib/location";
 
 const POSITIONS = [
   { id: "מלצרים/ות",   emoji: "🧑‍🍳" },
@@ -449,14 +450,21 @@ export default function ChatOnboarding({ user, onDone }) {
     const finalLng = geo?.lng || null;
     const finalAddress = geo?.verified_address || d.address || "";
 
+    // Clean the city (never store "נפת/מחוז ...") and, for Tel Aviv, derive the
+    // north/center/south zone from the geocoded latitude.
+    const cleanedCity = cleanCity(d.city) || "תל אביב";
+    const finalArea = (isTelAviv(cleanedCity) && finalLat != null)
+      ? telAvivZone(finalLat)
+      : (d.area || "");
+
     const { data: saved, error } = await supabase
       .from("restaurants")
       .upsert({
         owner_id:       user.id,
         name:           d.name,
         type:           d.type || "מסעדה",
-        city:           d.city || "תל אביב",
-        area:           d.area || "",
+        city:           cleanedCity,
+        area:           finalArea,
         address:        finalAddress,
         lat:            finalLat,
         lng:            finalLng,

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  Home, Briefcase, Users, Settings as SettingsIcon, Calendar, Search, LogOut
+  Home, Briefcase, Users, Settings as SettingsIcon, Calendar, LogOut
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { ROLE_LABEL } from "../lib/permissions";
@@ -12,7 +12,6 @@ import SettingsTab     from "./SettingsTab";
 import PlansTab        from "./PlansTab";
 import TeamPage        from "./TeamPage";
 import QuestionnaireEditor from "./QuestionnaireEditor";
-import SearchOverlay   from "./SearchOverlay";
 
 const TABS = [
   { id: "home",     label: "בית",      icon: Home },
@@ -27,7 +26,6 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
   const [plansOpen, setPlansOpen]               = useState(false);
   const [teamOpen,  setTeamOpen]                = useState(false);
   const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
-  const [searchOpen, setSearchOpen]             = useState(false);
 
   // User pill bits
   const fullName  = (user?.user_metadata?.name || user?.email || "").trim();
@@ -40,7 +38,8 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50" dir="rtl">
+    <div className="h-full w-full flex justify-center bg-gray-200">
+    <div className="relative h-full w-full max-w-md flex flex-col bg-gray-50 sm:shadow-2xl sm:shadow-gray-400/30 overflow-hidden" dir="rtl">
       {/* Persistent top-right user pill */}
       <div className="absolute z-30" style={{ top: "max(env(safe-area-inset-top, 0px), 12px)", insetInlineStart: "12px" }}>
         <UserPill firstName={firstName} initials={initials} role={role}
@@ -49,8 +48,8 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
-        {tab === "home"     && <HomeTab     restaurant={restaurant} onUpdate={onUpdate}
-          onOpenSearch={() => setSearchOpen(true)} onGoTab={goTab} />}
+        {tab === "home"     && <HomeTab     restaurant={restaurant} user={user} onUpdate={onUpdate}
+          onGoTab={goTab} />}
         {tab === "jobs"     && <JobsTab     restaurant={restaurant} onUpdate={onUpdate} role={role} />}
         {tab === "calendar" && <CalendarTab restaurant={restaurant} user={user} role={role} />}
         {tab === "apps"     && <ApplicationsTab restaurant={restaurant} role={role} />}
@@ -64,7 +63,7 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
 
       {/* Plans overlay */}
       {plansOpen && (
-        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+        <div className="absolute inset-0 z-50 bg-white flex flex-col">
           <div className="flex-1 min-h-0 overflow-y-auto">
             <PlansTab user={user} restaurant={restaurant} />
           </div>
@@ -76,13 +75,13 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
       )}
 
       {teamOpen && (
-        <div className="fixed inset-0 z-50 bg-gray-50">
+        <div className="absolute inset-0 z-50 bg-gray-50">
           <TeamPage restaurant={restaurant} user={user} onBack={() => setTeamOpen(false)} />
         </div>
       )}
 
       {questionnaireOpen && (
-        <div className="fixed inset-0 z-50 bg-gray-50">
+        <div className="absolute inset-0 z-50 bg-gray-50">
           <QuestionnaireEditor
             restaurant={restaurant}
             onBack={() => setQuestionnaireOpen(false)}
@@ -91,21 +90,8 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
         </div>
       )}
 
-      {searchOpen && (
-        <SearchOverlay
-          restaurant={restaurant}
-          onClose={() => setSearchOpen(false)}
-          onNavigate={(id) => { setTab(id); }}
-        />
-      )}
-
-      {/* Bottom nav — white, clean, with floating search FAB */}
-      <div className="flex-shrink-0 relative">
-        <button onClick={() => setSearchOpen(true)}
-          aria-label="חיפוש"
-          className="absolute -top-7 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-gray-900 text-white flex items-center justify-center shadow-xl shadow-gray-900/30 active:scale-95 active:bg-gray-800 transition-all z-20 border-4 border-gray-50">
-          <Search size={20} />
-        </button>
+      {/* Bottom nav — white, clean */}
+      <div className="flex-shrink-0">
         <div className="safe-bottom"
           style={{
             background: "rgba(255,255,255,0.92)",
@@ -137,6 +123,7 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

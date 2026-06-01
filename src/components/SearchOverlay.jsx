@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Search, X, Users, Briefcase, Calendar, ChevronLeft } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { expLabel } from "../lib/gender";
+import { locationLabel } from "../lib/location";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Global search overlay.  Searches:
@@ -35,7 +37,7 @@ export default function SearchOverlay({ restaurant, onClose, onNavigate }) {
         const userIds = [...new Set(apps.map((a) => a.user_id).filter(Boolean))];
         if (userIds.length) {
           const { data: profs } = await supabase
-            .from("profiles").select("id, name, city, experience, position_types")
+            .from("profiles").select("id, name, city, experience, gender, lat, lng, position_types")
             .in("id", userIds);
           const byId = Object.fromEntries((profs || []).map((p) => [p.id, p]));
           candidates = apps
@@ -109,7 +111,7 @@ export default function SearchOverlay({ restaurant, onClose, onNavigate }) {
                   <ResultCard key={c.id} onClick={() => { onNavigate("apps"); onClose(); }}>
                     <p className="text-gray-900 font-bold text-sm">{c.profile?.name || "מועמד/ת"}</p>
                     <p className="text-gray-500 text-xs mt-0.5">
-                      {[c.profile?.city, c.profile?.experience].filter(Boolean).join(" · ")}
+                      {[locationLabel({ city: c.profile?.city, lat: c.profile?.lat, lng: c.profile?.lng }), expLabel(c.profile?.experience, c.profile?.gender)].filter(Boolean).join(" · ")}
                     </p>
                   </ResultCard>
                 ))}

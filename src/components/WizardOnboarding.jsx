@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import { ChevronLeft, Loader2, Check, Plus, Minus, X } from "lucide-react";
+import { ChevronLeft, Loader2, Check, X, ImageOff } from "lucide-react";
 import { logEvent } from "../lib/tracking";
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
 
@@ -8,9 +8,9 @@ import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
 const draftKey = (uid) => `shiftmatch:wizard_draft:${uid}`;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WizardOnboarding — Fireberry-inspired wizard.
-// One question per screen, light theme, chip selectors, full-width black CTA.
-// Replaces the older chat-style onboarding.
+// WizardOnboarding — restaurant details only.
+// Steps: name → type → size → city → kosher → whatsapp → photo → review
+// Positions / shifts / benefits are configured later in the Jobs tab.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TYPES = [
@@ -26,27 +26,14 @@ const SIZE_OPTIONS = [
   { key: "xl",     label: "50+ עובדים" },
 ];
 
-const POSITIONS = [
-  { id: "מלצרים/ות",   emoji: "🧑‍🍳" },
-  { id: "ברמנים/יות",  emoji: "🍸" },
-  { id: "מארחות/ים",   emoji: "💁" },
-  { id: "מנהלי משמרת", emoji: "📋" },
-  { id: "עוזרי מלצר",  emoji: "🙋" },
-  { id: "קופאים/ות",   emoji: "💰" },
-  { id: "מזון מהיר",   emoji: "🍔" },
+const KOSHER_OPTIONS = [
+  { key: "rabbinate", label: "כשר (רבנות)" },
+  { key: "badatz",    label: 'כשר (בד"ץ)' },
+  { key: "non",       label: "לא כשר" },
+  { key: "vegan",     label: "טבעוני" },
 ];
 
-const SHIFTS = ["בוקר", "צהריים", "ערב", "לילה", "סופ\"ש"];
-
-const BENEFITS = [
-  "טיפים", "ארוחת עובד", "נסיעות", "בונוסים",
-  "חנייה", "קידום פנימי", "הכשרה", "ביגוד",
-  "טיפים גבוהים", "שעות גמישות", "מונית הביתה",
-];
-
-// Wizard step order — driven by index, with optional skip-on-first-step
-// if we already have the restaurant name from signup.
-const STEPS = ["name", "type", "size", "city", "positions", "salary", "shifts", "benefits", "whatsapp", "review"];
+const STEPS = ["name", "type", "size", "city", "kosher", "whatsapp", "photo", "review"];
 
 export default function WizardOnboarding({ user, onDone, onClose }) {
   const presetName = user?.user_metadata?.restaurant_name?.trim() || "";
@@ -63,29 +50,28 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
   })();
 
   const initialD = restored?.d || {
-    name:  presetName,
-    type:  "",
-    size:  "",
-    city:  presetCity,
-    area:  "",
-    positions: [],
-    positionSalaries: {},
-    positionCounts: {},
-    shifts: [],
-    benefits: [],
+    name:     presetName,
+    type:     "",
+    size:     "",
+    city:     presetCity,
+    area:     "",
+    kosher:   null,
     whatsapp: "",
-    urgent: false,
+    imageUrl: null,
   };
 
-  // First incomplete step: name (if blank) → otherwise jump to where they left off.
-  const initialStep = restored?.step ?? (initialD.name ? 1 : 0);
+  // Clamp restored step so stale drafts from old wizard don't go out of bounds.
+  const initialStep = Math.min(
+    restored?.step ?? (initialD.name ? 1 : 0),
+    STEPS.length - 1
+  );
 
-  const [step, setStep] = useState(initialStep);
+  const [step,   setStep]   = useState(initialStep);
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-  const [d, setD] = useState(initialD);
+  const [err,    setErr]    = useState("");
+  const [d,      setD]      = useState(initialD);
 
-  // Persist a draft on every change so the wizard can resume cleanly.
+  // Persist draft on every change.
   useEffect(() => {
     if (typeof window === "undefined" || !user?.id) return;
     try {
@@ -98,27 +84,23 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
     try { window.localStorage.removeItem(draftKey(user.id)); } catch {}
   };
 
-  // Helpers
-  const set = (patch) => setD((x) => ({ ...x, ...patch }));
+  const set  = (patch) => setD((x) => ({ ...x, ...patch }));
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
   const stepId = STEPS[step];
 
-  // Can we advance from the current step?  Each step's "ready" rule.
   const canAdvance = (() => {
     switch (stepId) {
-      case "name":      return d.name.trim().length > 1;
-      case "type":      return d.type.length > 0;
-      case "size":      return d.size.length > 0;
-      case "city":      return d.city.trim().length > 1;
-      case "positions": return d.positions.length > 0;
-      case "salary":    return d.positions.every((p) => (d.positionSalaries[p] || 0) > 0);
-      case "shifts":    return d.shifts.length > 0;
-      case "benefits":  return true; // optional
-      case "whatsapp":  return isValidIsraeliPhone(d.whatsapp);
-      case "review":    return true;
-      default:          return false;
+      case "name":     return d.name.trim().length > 1;
+      case "type":     return d.type.length > 0;
+      case "size":     return d.size.length > 0;
+      case "city":     return d.city.trim().length > 1;
+      case "kosher":   return true; // optional
+      case "whatsapp": return isValidIsraeliPhone(d.whatsapp);
+      case "photo":    return true; // optional — skip = no photo
+      case "review":   return true;
+      default:         return false;
     }
   })();
 
@@ -126,33 +108,31 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
     if (saving) return;
     setSaving(true); setErr("");
 
-    // Avg hourly_rate from per-position salaries (for legacy column).
-    const vals = Object.values(d.positionSalaries);
-    const avg  = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
-
-    // Sum total open positions from per-position counts.
-    const totalOpen = Object.values(d.positionCounts).reduce((a, b) => a + (parseInt(b) || 0), 0) || d.positions.length;
-
     const payload = {
-      owner_id: user.id,
-      name: d.name,
-      type: d.type,
-      city: d.city,
-      area: d.area || "",
-      description: `${d.name} — ${d.type} ב${d.city}`,
-      image_url: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80",
-      phone: d.whatsapp,
+      owner_id:             user.id,
+      name:                 d.name,
+      type:                 d.type,
+      city:                 d.city,
+      area:                 d.area || "",
+      description:          `${d.name} — ${d.type} ב${d.city}`,
+      image_url:            d.imageUrl || null,          // null = no photo (skipped)
+      phone:                d.whatsapp,
       recruitment_whatsapp: d.whatsapp,
-      contact_name: user.user_metadata?.name || user.email,
-      hourly_rate: avg,
-      position_types: d.positions,
-      position_salaries: d.positionSalaries,
-      position_counts: d.positionCounts,
-      position_open: Object.fromEntries(d.positions.map((p) => [p, true])),
-      open_positions: totalOpen,
-      shifts: d.shifts,
-      benefits: d.benefits,
-      active: true,
+      contact_name:         user.user_metadata?.name || user.email,
+      // kosher + size stored in the JSONB attributes column (same as SettingsTab)
+      attributes: {
+        kosher: d.kosher || null,
+        size:   d.size   || null,
+      },
+      // Positions / shifts / benefits start empty — user configures via Jobs tab
+      position_types:    [],
+      position_salaries: {},
+      position_counts:   {},
+      position_open:     {},
+      open_positions:    0,
+      shifts:            [],
+      benefits:          [],
+      active:            true,
     };
 
     const { data: saved, error } = await supabase
@@ -162,16 +142,15 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
       .single();
 
     if (error) {
-      // Friendly message when the unique (name, city) index trips.
-      const friendly = error.code === "23505" || /unique|duplicate/i.test(error.message || "")
-        ? "מסעדה בשם הזה בעיר הזו כבר רשומה. נסה/י שם אחר או פנה/י לתמיכה."
-        : (error.message || "שגיאה בשמירה");
+      const friendly =
+        error.code === "23505" || /unique|duplicate/i.test(error.message || "")
+          ? "מסעדה בשם הזה בעיר הזו כבר רשומה. נסה/י שם אחר או פנה/י לתמיכה."
+          : (error.message || "שגיאה בשמירה");
       setErr(friendly);
       setSaving(false);
       return;
     }
 
-    // Successful save — clean up the draft so a future re-entry is fresh.
     clearDraft();
 
     logEvent("restaurant", "published", {
@@ -179,12 +158,11 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
       type: d.type, city: d.city,
     });
 
-    // Loading transition for the warm "almost there" moment, then hand off.
     setStep(STEPS.length); // beyond review → triggers loading screen
     setTimeout(() => onDone?.(saved), 1500);
   };
 
-  // ── Loading transition (after save) ────────────────────────────────────
+  // ── Loading transition (after save) ──────────────────────────────────────
   if (step >= STEPS.length) {
     return (
       <Frame>
@@ -195,7 +173,8 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
           <h1 className="text-2xl font-black text-gray-900">אנחנו כמעט שם!</h1>
           <p className="text-gray-500 text-sm mt-2">מקימים את החשבון של {d.name}…</p>
           <div className="mt-8 w-48 h-1 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-gray-900 rounded-full" style={{ width: "100%", animation: "fillBar 1.4s ease-out" }} />
+            <div className="h-full bg-gray-900 rounded-full"
+              style={{ width: "100%", animation: "fillBar 1.4s ease-out" }} />
           </div>
         </div>
         <style>{`@keyframes fillBar { from { width: 0% } to { width: 100% } }`}</style>
@@ -203,8 +182,7 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
     );
   }
 
-  // ── Step UIs ──────────────────────────────────────────────────────────
-
+  // ── Step UIs ──────────────────────────────────────────────────────────────
   return (
     <Frame>
       {/* Header: close + back + progress */}
@@ -226,6 +204,7 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pt-6 pb-4">
+
         {stepId === "name" && (
           <Step title="מה שם המסעדה?" sub="זה השם שמועמדים יראו בכרטיס המודעה.">
             <TextInput value={d.name} onChange={(v) => set({ name: v })}
@@ -239,9 +218,13 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
 
         {stepId === "size" && (
           <Step title="כמה עובדים יש לכם?" sub="הערכה גסה — אפשר לשנות מאוחר יותר.">
-            <Chips options={SIZE_OPTIONS.map((o) => o.label)}
+            <Chips
+              options={SIZE_OPTIONS.map((o) => o.label)}
               value={SIZE_OPTIONS.find((o) => o.key === d.size)?.label || ""}
-              onChange={(label) => set({ size: SIZE_OPTIONS.find((o) => o.label === label)?.key })} />
+              onChange={(label) =>
+                set({ size: SIZE_OPTIONS.find((o) => o.label === label)?.key })
+              }
+            />
           </Step>
         )}
 
@@ -255,48 +238,15 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
           </Step>
         )}
 
-        {stepId === "positions" && (
-          <Step title="אילו תפקידים אתם מגייסים?" sub="ניתן לבחור כמה.">
-            <PositionPicker
-              options={POSITIONS}
-              selected={d.positions}
-              onChange={(arr) => set({ positions: arr })}
+        {stepId === "kosher" && (
+          <Step title="מה סטטוס הכשרות?" sub="עוזר למועמדים להבין את אופי המקום.">
+            <Chips
+              options={KOSHER_OPTIONS.map((o) => o.label)}
+              value={KOSHER_OPTIONS.find((o) => o.key === d.kosher)?.label || ""}
+              onChange={(label) =>
+                set({ kosher: KOSHER_OPTIONS.find((o) => o.label === label)?.key || null })
+              }
             />
-          </Step>
-        )}
-
-        {stepId === "salary" && (() => {
-          const missing = d.positions.filter((p) => !(d.positionSalaries[p] > 0));
-          return (
-            <Step title="כמה משלמים לשעה?" sub="מלא/י שכר לכל תפקיד כדי להמשיך.">
-              <SalaryGrid
-                positions={d.positions}
-                counts={d.positionCounts}
-                salaries={d.positionSalaries}
-                onCounts={(c) => set({ positionCounts: c })}
-                onSalaries={(s) => set({ positionSalaries: s })}
-              />
-              {missing.length > 0 && (
-                <div className="mt-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl p-3 flex items-start gap-2">
-                  <span className="text-base">⚠️</span>
-                  <p className="text-xs leading-relaxed">
-                    כדי להמשיך, מלא/י שכר לשעה עבור: <b>{missing.join(" · ")}</b>
-                  </p>
-                </div>
-              )}
-            </Step>
-          );
-        })()}
-
-        {stepId === "shifts" && (
-          <Step title="אילו משמרות צריך לכסות?" sub="ניתן לבחור כמה.">
-            <Chips options={SHIFTS} value={d.shifts} onChange={(v) => set({ shifts: v })} multi />
-          </Step>
-        )}
-
-        {stepId === "benefits" && (
-          <Step title="מה ההטבות שאתם מציעים?" sub="אופציונלי — דלגו אם אין.">
-            <Chips options={BENEFITS} value={d.benefits} onChange={(v) => set({ benefits: v })} multi />
           </Step>
         )}
 
@@ -309,9 +259,21 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
               type="tel" inputMode="numeric" maxLength={10} dir="ltr" autoFocus
             />
             {d.whatsapp && !isValidIsraeliPhone(d.whatsapp) && (
-              <p className="text-amber-600 text-xs mt-2">המספר חייב להתחיל ב-05 ולכלול 10 ספרות בסך הכל</p>
+              <p className="text-amber-600 text-xs mt-2">
+                המספר חייב להתחיל ב-05 ולכלול 10 ספרות בסך הכל
+              </p>
             )}
           </Step>
+        )}
+
+        {stepId === "photo" && (
+          <PhotoStep
+            name={d.name}
+            city={d.city}
+            type={d.type}
+            value={d.imageUrl}
+            onChange={(url) => set({ imageUrl: url })}
+          />
         )}
 
         {stepId === "review" && (
@@ -333,12 +295,18 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
           disabled={!canAdvance || saving}
           className="w-full bg-gray-900 text-white font-bold py-4 rounded-full text-base active:bg-gray-800 disabled:bg-gray-300 disabled:text-gray-500 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-gray-900/10">
           {saving && <Loader2 size={18} className="animate-spin" />}
-          {stepId === "review" ? "פרסום המודעה 🚀" : "המשך"}
+          {stepId === "review"
+            ? "פרסום המודעה 🚀"
+            : stepId === "photo" && d.imageUrl
+              ? "אשר תמונה והמשך"
+              : "המשך"}
         </button>
-        {(stepId === "benefits" || stepId === "city") && d.area === "" && stepId === "city" && (
-          <button onClick={() => { set({ area: "" }); next(); }}
-            className="w-full text-gray-500 text-xs font-semibold py-3 underline">
-            דלג/י
+
+        {/* Optional steps — skip links */}
+        {(stepId === "kosher" || stepId === "photo") && (
+          <button onClick={() => { if (stepId === "photo") set({ imageUrl: null }); next(); }}
+            className="w-full text-gray-400 text-xs font-semibold py-3 underline">
+            {stepId === "photo" ? "המשך ללא תמונה" : "דלג/י על שלב זה"}
           </button>
         )}
       </div>
@@ -346,13 +314,113 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
   );
 }
 
-// ── Type step with free-text "Other" support ─────────────────────────────
-//
-// The preset types are chips; selecting "אחר" replaces the value with empty
-// string and reveals an input.  Picking any other chip clears the free text.
+// ── Photo step — searches Google Places / falls back to Unsplash ──────────────
+function PhotoStep({ name, city, type, value, onChange }) {
+  const [photos,  setPhotos]  = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [source,  setSource]  = useState(null);
+
+  useEffect(() => {
+    if (!name) return;
+    setLoading(true);
+    setPhotos([]);
+
+    const params = new URLSearchParams({
+      name: name || "",
+      city: city || "",
+      type: type || "",
+    });
+
+    fetch(`/api/restaurant-photos?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setPhotos(data.photos || []);
+        setSource(data.source || null);
+      })
+      .catch(() => {
+        setPhotos([]);
+      })
+      .finally(() => setLoading(false));
+  }, [name, city, type]);
+
+  const subtitle = source === "google_places"
+    ? `תמונות אמיתיות של ${name} ממפות גוגל`
+    : `תמונות לפי סוג המסעדה`;
+
+  if (loading) {
+    return (
+      <Step title="מחפשים תמונה..." sub={`מחפשים תמונות של ${name}...`}>
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <Loader2 size={32} className="animate-spin text-gray-400" />
+          <p className="text-gray-400 text-sm">זה לוקח כמה שניות</p>
+        </div>
+      </Step>
+    );
+  }
+
+  if (!photos.length) {
+    return (
+      <Step title="תמונה למסעדה" sub="לא נמצאו תמונות. ניתן להוסיף מאוחר יותר דרך ההגדרות.">
+        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-2xl p-10 flex flex-col items-center gap-3">
+          <ImageOff size={32} className="text-gray-300" />
+          <p className="text-gray-400 text-sm text-center">לא נמצאו תמונות עבור {name}</p>
+        </div>
+      </Step>
+    );
+  }
+
+  return (
+    <Step title="בחר/י תמונה" sub={subtitle}>
+      <div className="grid grid-cols-2 gap-3">
+        {photos.map((url, i) => {
+          const selected = value === url;
+          return (
+            <button
+              key={i}
+              onClick={() => onChange(selected ? null : url)}
+              className={`relative rounded-2xl overflow-hidden border-2 transition-all duration-200 ${
+                selected
+                  ? "border-gray-900 shadow-lg"
+                  : "border-transparent active:scale-[0.97]"
+              }`}
+              style={{ aspectRatio: "1 / 1" }}
+            >
+              <img
+                src={url}
+                alt={`תמונה ${i + 1}`}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+              {/* Checkmark overlay when selected */}
+              {selected && (
+                <div className="absolute inset-0 bg-gray-900/25 flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-full bg-gray-900 border-2 border-white flex items-center justify-center shadow-lg">
+                    <Check size={18} className="text-white" />
+                  </div>
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {value && (
+        <div className="mt-3 bg-gray-50 border border-gray-200 rounded-2xl p-3 flex items-center gap-2">
+          <img src={value} alt="נבחרה" className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
+          <p className="text-gray-700 text-xs font-semibold flex-1">תמונה נבחרה ✓</p>
+          <button onClick={() => onChange(null)}
+            className="text-gray-400 text-xs underline active:text-gray-700">
+            בטל
+          </button>
+        </div>
+      )}
+    </Step>
+  );
+}
+
+// ── Type step with free-text "Other" support ──────────────────────────────────
 function TypeStep({ value, onChange }) {
-  // "Other" mode = the current value isn't one of the preset (non-other) labels.
-  const PRESETS = TYPES.slice(0, -1);            // everything except "אחר"
+  const PRESETS = TYPES.slice(0, -1); // everything except "אחר"
   const isOther = value !== "" && !PRESETS.includes(value);
   const [otherMode, setOtherMode] = useState(isOther);
 
@@ -382,7 +450,7 @@ function TypeStep({ value, onChange }) {
   );
 }
 
-// ── Small presentational components ───────────────────────────────────────
+// ── Presentational components ─────────────────────────────────────────────────
 
 function Frame({ children }) {
   return (
@@ -426,90 +494,23 @@ function TextInput({ value, onChange, placeholder, type = "text", maxLength, inp
   );
 }
 
-// Chips: single or multi-select with light pill style.
-function Chips({ options, value, onChange, multi = false }) {
-  const isOn = (o) => multi ? value.includes(o) : value === o;
-  const toggle = (o) => {
-    if (multi) onChange(value.includes(o) ? value.filter((x) => x !== o) : [...value, o]);
-    else onChange(o);
-  };
+// Chips: single-select with light pill style.
+function Chips({ options, value, onChange }) {
   return (
     <div className="flex flex-wrap gap-2">
       {options.map((o) => {
-        const on = isOn(o);
+        const on = value === o;
         return (
-          <button key={o} onClick={() => toggle(o)}
+          <button key={o} onClick={() => onChange(o)}
             className={`px-4 py-2.5 rounded-full text-sm font-semibold transition-all border ${
               on
                 ? "bg-gray-900 text-white border-gray-900 shadow-md"
                 : "bg-white text-gray-700 border-gray-200 active:bg-gray-50"
             }`}>
-            {o}{on && multi && <Check size={12} className="inline mr-1.5" />}
+            {o}{on && <Check size={12} className="inline mr-1.5" />}
           </button>
         );
       })}
-    </div>
-  );
-}
-
-function PositionPicker({ options, selected, onChange }) {
-  const toggle = (id) => {
-    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-  };
-  return (
-    <div className="grid grid-cols-2 gap-2.5">
-      {options.map((p) => {
-        const on = selected.includes(p.id);
-        return (
-          <button key={p.id} onClick={() => toggle(p.id)}
-            className={`p-4 rounded-2xl text-center transition-all border ${
-              on
-                ? "bg-gray-900 text-white border-gray-900 shadow-md"
-                : "bg-white text-gray-700 border-gray-200 active:bg-gray-50"
-            }`}>
-            <div className="text-2xl mb-1">{p.emoji}</div>
-            <div className="text-sm font-bold">{p.id}</div>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function SalaryGrid({ positions, counts, salaries, onCounts, onSalaries }) {
-  const setCount   = (p, v) => onCounts({ ...counts, [p]: Math.max(1, parseInt(v) || 1) });
-  const setSalary  = (p, v) => onSalaries({ ...salaries, [p]: Math.max(0, parseInt(v) || 0) });
-
-  return (
-    <div className="space-y-3">
-      {positions.map((p) => (
-        <div key={p} className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
-          <p className="text-gray-900 font-bold text-sm mb-3">{p}</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-gray-500 text-[11px] font-semibold uppercase tracking-wide block mb-1.5">משרות</label>
-              <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl p-1">
-                <button onClick={() => setCount(p, (counts[p] || 1) - 1)}
-                  className="w-8 h-8 rounded-lg bg-gray-100 text-gray-700 font-bold flex items-center justify-center">
-                  <Minus size={14} />
-                </button>
-                <span className="flex-1 text-center text-gray-900 font-bold">{counts[p] || 1}</span>
-                <button onClick={() => setCount(p, (counts[p] || 1) + 1)}
-                  className="w-8 h-8 rounded-lg bg-gray-100 text-gray-700 font-bold flex items-center justify-center">
-                  <Plus size={14} />
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="text-gray-500 text-[11px] font-semibold uppercase tracking-wide block mb-1.5">₪ לשעה</label>
-              <input type="number" min="0" value={salaries[p] || ""}
-                onChange={(e) => setSalary(p, e.target.value)}
-                placeholder="50"
-                className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-gray-900 text-sm outline-none focus:border-gray-900 text-center font-bold" />
-            </div>
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -522,17 +523,30 @@ function ReviewCard({ d }) {
     </div>
   ) : null;
 
-  const totalPositions = Object.values(d.positionCounts).reduce((a, b) => a + (parseInt(b) || 0), 0) || d.positions.length;
+  const kosherLabel = KOSHER_OPTIONS.find((o) => o.key === d.kosher)?.label;
+  const sizeLabel   = SIZE_OPTIONS.find((o) => o.key === d.size)?.label;
 
   return (
-    <div className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-2">
-      <Row label="שם" value={d.name} />
-      <Row label="סוג" value={d.type} />
-      <Row label="עיר" value={d.city + (d.area ? ` · ${d.area}` : "")} />
-      <Row label="תפקידים" value={d.positions.join(" · ") + ` (${totalPositions} משרות)`} />
-      <Row label="משמרות" value={d.shifts.join(" · ")} />
-      <Row label="הטבות" value={d.benefits.join(" · ") || "—"} />
-      <Row label="וואטסאפ" value={d.whatsapp} />
+    <div className="bg-gray-50 border border-gray-200 rounded-2xl overflow-hidden">
+      {/* Photo preview at top of review card */}
+      {d.imageUrl && (
+        <div className="w-full h-36 relative">
+          <img src={d.imageUrl} alt="תמונת המסעדה" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-900/40 to-transparent" />
+          <p className="absolute bottom-2 right-3 text-white text-xs font-semibold drop-shadow">
+            {d.name}
+          </p>
+        </div>
+      )}
+      <div className="px-4 py-2">
+        <Row label="שם"      value={d.name} />
+        <Row label="סוג"     value={d.type} />
+        <Row label="עיר"     value={d.city + (d.area ? ` · ${d.area}` : "")} />
+        <Row label="גודל"    value={sizeLabel} />
+        <Row label="כשרות"   value={kosherLabel} />
+        <Row label="תמונה"   value={d.imageUrl ? "✓ נבחרה" : "ללא תמונה"} />
+        <Row label="וואטסאפ" value={d.whatsapp} />
+      </div>
     </div>
   );
 }

@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import {
-  Search, TrendingUp, Eye, MessageCircle, Phone, ChevronLeft, Edit3,
+  TrendingUp, Eye, MessageCircle, Phone, ChevronLeft, Edit3,
   Briefcase, Users, Calendar, Sparkles
 } from "lucide-react";
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
+import { locationLabel } from "../lib/location";
+import MatchesFeed from "./MatchesFeed";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HomeTab — Fireberry-inspired premium white dashboard.
@@ -12,7 +14,7 @@ import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
 //             big "active" hero  →  KPIs  →  next interview  →  details
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function HomeTab({ restaurant: r, onUpdate, onOpenSearch, onGoTab }) {
+export default function HomeTab({ restaurant: r, user, onUpdate, onGoTab }) {
   const [appCount, setAppCount]   = useState(0);
   const [toggling, setToggling]   = useState(false);
   const [editingWA, setEditingWA] = useState(false);
@@ -70,16 +72,7 @@ export default function HomeTab({ restaurant: r, onUpdate, onOpenSearch, onGoTab
       <div className="px-5 pt-20 pb-4 bg-white border-b border-gray-100">
         <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">שלום 👋</p>
         <h1 className="text-2xl font-black text-gray-900 tracking-tight mt-1 truncate">{r?.name || "המסעדה שלי"}</h1>
-        {r?.city && <p className="text-gray-400 text-xs mt-0.5">{r.city}{r.area ? ` · ${r.area}` : ""}</p>}
-      </div>
-
-      {/* ── Search row (BELOW the greeting header, not on top of it) ── */}
-      <div className="px-4 pt-4">
-        <button onClick={onOpenSearch}
-          className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 flex items-center gap-2.5 active:bg-gray-50 shadow-sm transition-colors">
-          <Search size={16} className="text-gray-500" />
-          <span className="text-gray-400 text-sm flex-1 text-right">חיפוש מועמדים, משרות, ראיונות...</span>
-        </button>
+        {r?.city && <p className="text-gray-400 text-xs mt-0.5">{locationLabel({ city: r.city, area: r.area, lat: r.lat, lng: r.lng })}</p>}
       </div>
 
       <div className="px-4 pt-4 space-y-3">
@@ -120,6 +113,9 @@ export default function HomeTab({ restaurant: r, onUpdate, onOpenSearch, onGoTab
             </div>
           </div>
         </button>
+
+        {/* ── Smart matches feed (AI agent output) ── */}
+        <MatchesFeed restaurant={r} user={user} onScheduled={() => onGoTab?.("calendar")} />
 
         {/* ── KPI strip ── */}
         <div className="grid grid-cols-4 gap-2">

@@ -59,6 +59,9 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
   // & screening; recruiter/viewer see read-only.
   const canEditJobs       = can(role, "edit_jobs");
   const canEditScreening  = can(role, "edit_screening");
+  // Read-only mode for roles without edit rights (recruiter/viewer):
+  // locks every form control so the UI matches the banner + server RLS.
+  const ro = !canEditJobs;
   // Local form state mirrors the DB row but allows un-saved edits.
   const [form, setForm] = useState({
     name:        restaurant?.name || "",
@@ -196,6 +199,9 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
       )}
 
       <div className="px-4 space-y-4">
+
+        {/* Editable form — disabled wholesale for read-only roles */}
+        <fieldset disabled={ro} className={`space-y-4 m-0 p-0 border-0 min-w-0 ${ro ? "opacity-60" : ""}`}>
 
         {/* ── Cover image preview ── */}
         <div className="relative h-44 rounded-2xl overflow-hidden bg-white border border-gray-200">
@@ -442,6 +448,8 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
             </button>
           </div>
         </Section>
+
+        </fieldset>
 
         {/* ── Actions ── */}
         <div className="bg-white border border-gray-200 rounded-2xl divide-y divide-white/5 overflow-hidden">

@@ -1,264 +1,199 @@
 import { useState, useEffect } from "react";
 import {
-  Users, UserPlus, ArrowRight, X, Check, Crown, Shield, Briefcase,
-  Phone, Eye, MoreVertical, Loader2, Mail, Clock, Trash2
+  Users, UserPlus, ArrowRight, X, Check, Crown, Shield, Calendar,
+  Eye, MoreVertical, Loader2, Trash2, Lock, ChevronDown
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { can } from "../lib/permissions";
 
-// Role catalog — order matters (used for sorting + role picker).
+// ─── Role metadata — light-theme palette ────────────────────────────────────
 const ROLES = {
-  owner:     { label: "בעלים",        icon: Crown,     color: "from-yellow-500 to-orange-500" },
-  admin:     { label: "מנהל ראשי",    icon: Shield,    color: "from-purple-500 to-pink-500" },
-  manager:   { label: "מנהל",         icon: Briefcase, color: "from-blue-500 to-cyan-500" },
-  recruiter: { label: "מגייס",         icon: Phone,     color: "from-green-500 to-teal-500" },
-  viewer:    { label: "צפייה בלבד",    icon: Eye,       color: "from-gray-500 to-gray-600" },
+  owner:     { label: "בעלים",       icon: Crown,    bg: "bg-amber-100",  text: "text-amber-700",  dot: "bg-amber-400"  },
+  admin:     { label: "מנהל ראשי",   icon: Shield,   bg: "bg-purple-100", text: "text-purple-700", dot: "bg-purple-500" },
+  recruiter: { label: "מגייס/ת",     icon: Calendar, bg: "bg-blue-100",   text: "text-blue-700",   dot: "bg-blue-500"   },
+  viewer:    { label: "צפייה בלבד",  icon: Eye,      bg: "bg-gray-100",   text: "text-gray-600",   dot: "bg-gray-400"   },
 };
 
 const ROLE_DESCRIPTIONS = {
-  admin:     "הרשאות מלאות מלבד מחיקת חשבון המסעדה",
-  manager:   "פרסום משרות וניהול מועמדים",
-  recruiter: "צפייה ויצירת קשר עם מועמדים בלבד",
-  viewer:    "קריאה בלבד — בלי לערוך",
+  admin:     "הוספת אנשי צוות ועריכת כל פרטי המסעדה",
+  recruiter: "תיאום ראיונות עם מועמדים בלבד",
+  viewer:    "צפייה בפניות ומועמדים — ללא עריכה",
 };
 
-const ROLE_ORDER = ["owner", "admin", "manager", "recruiter", "viewer"];
+const ROLE_PERMISSIONS = [
+  { role: "owner",     perms: ["ניהול מלא", "הסרת חשבונות", "הוספת צוות"] },
+  { role: "admin",     perms: ["הוספת צוות", "עריכת פרטים", "ניהול משרות"] },
+  { role: "recruiter", perms: ["תיאום ראיונות", "צפייה במועמדים"] },
+  { role: "viewer",    perms: ["צפייה בלבד"] },
+];
 
+const ADDABLE_ROLES = ["admin", "recruiter", "viewer"];
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 export default function TeamPage({ restaurant, user, onBack }) {
-  const [members,    setMembers]    = useState([]);
-  const [invites,    setInvites]    = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [showInvite, setShowInvite] = useState(false);
-  const [actionMember, setActionMember] = useState(null); // { ...member } for action sheet
+  const [members,      setMembers]      = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [showAdd,      setShowAdd]      = useState(false);
+  const [actionMember, setActionMember] = useState(null);
 
-  // Find caller's role to decide what UI to show.
-  const myMembership = members.find((m) => m.user_id === user?.id);
-  const myRole = myMembership?.role || "viewer";
-  // OWNER ONLY can invite/approve/remove/change roles per user override.
-  const canManage = can(myRole, "invite");
+  const myMembership = members.find(m => m.user_id === user?.id);
+  const myRole    = myMembership?.role || "viewer";
+  const canAdd    = can(myRole, "invite");
+  const canRemove = can(myRole, "remove");
+  const canEdit   = can(myRole, "change_role");
 
   const load = async () => {
     setLoading(true);
 
-    // Self-heal: if the restaurant owner doesn't have a member row (because the
-    // auto-trigger missed them, e.g. demo-seeded restaurants), insert one now so
-    // they appear in the team list and have full RLS access.
+    // Self-heal: if owner has no member row yet, create one so they appear.
     if (user?.id && restaurant?.owner_id === user.id) {
       const { data: existing } = await supabase
-        .from("restaurant_members")
-        .select("id")
-        .eq("restaurant_id", restaurant.id)
-        .eq("user_id", user.id)
-        .maybeSingle();
+        .from("restaurant_members").select("id")
+        .eq("restaurant_id", restaurant.id).eq("user_id", user.id).maybeSingle();
       if (!existing) {
         await supabase.from("restaurant_members").insert({
-          restaurant_id: restaurant.id,
-          user_id: user.id,
-          role: "owner",
-          status: "approved",
+          restaurant_id: restaurant.id, user_id: user.id,
+          role: "owner", status: "approved",
           approved_at: new Date().toISOString(),
         });
       }
     }
 
-    // Fetch members + invitations in parallel.
-    const [{ data: m }, { data: i }] = await Promise.all([
-      supabase
-        .from("restaurant_members")
-        .select("*")
-        .eq("restaurant_id", restaurant.id),
-      supabase
-        .from("restaurant_invitations")
-        .select("*")
-        .eq("restaurant_id", restaurant.id)
-        .is("accepted_at", null),
-    ]);
+    // Use a SECURITY DEFINER RPC to avoid the recursive-RLS issue that
+    // occurs when querying restaurant_members filtered by restaurant_id.
+    const { data: rows } = await supabase
+      .rpc("get_team_members", { p_restaurant_id: restaurant.id });
 
-    // Manually attach profile (no FK from restaurant_members → profiles,
-    // both reference auth.users → PostgREST can't auto-join).
-    let withProfiles = m || [];
-    if (withProfiles.length > 0) {
-      const userIds = withProfiles.map((x) => x.user_id);
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, name")
-        .in("id", userIds);
-      const byId = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
-      withProfiles = withProfiles.map((row) => ({
-        ...row,
-        profile: byId[row.user_id] || { name: null },
-      }));
-    }
+    // Normalise shape so MemberRow can use profile.name / profile.email
+    const members = (rows || []).map(r => ({
+      ...r,
+      profile: { name: r.profile_name, email: r.profile_email },
+    }));
 
-    // Sort by status (pending first) then role priority.
-    const sorted = withProfiles.sort((a, b) => {
-      const sa = a.status === "pending" ? -1 : 0;
-      const sb = b.status === "pending" ? -1 : 0;
-      if (sa !== sb) return sa - sb;
-      return ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role);
-    });
-    setMembers(sorted);
-    setInvites(i || []);
+    setMembers(members);
     setLoading(false);
   };
 
   useEffect(() => { if (restaurant?.id) load(); }, [restaurant?.id]);
 
-  const updateMember = async (id, patch) => {
-    await supabase.from("restaurant_members").update(patch).eq("id", id);
-    load();
+  const changeRole = async (memberId, newRole) => {
+    await supabase.from("restaurant_members").update({ role: newRole }).eq("id", memberId);
     setActionMember(null);
+    load();
   };
 
-  const removeMember = async (id) => {
-    if (!confirm("להסיר את המשתמש מהמסעדה?")) return;
-    await supabase.from("restaurant_members").delete().eq("id", id);
-    load();
+  const removeMember = async (memberId) => {
+    const { data, error } = await supabase.rpc("remove_team_member", {
+      p_member_id:    memberId,
+      p_requester_id: user.id,
+    });
+    const errMsg = error?.message || data?.error;
+    if (errMsg) { alert("שגיאה בהסרת חבר הצוות: " + errMsg); return; }
     setActionMember(null);
-  };
-
-  const approveMember = (m) => updateMember(m.id, {
-    status: "approved",
-    approved_by: user.id,
-    approved_at: new Date().toISOString(),
-  });
-
-  const rejectMember = (m) => updateMember(m.id, { status: "rejected" });
-
-  const cancelInvite = async (id) => {
-    await supabase.from("restaurant_invitations").delete().eq("id", id);
     load();
   };
-
-  const pendingCount = members.filter((m) => m.status === "pending").length;
 
   return (
-    <div className="h-full flex flex-col bg-[#0A0A0A]">
-      {/* Header */}
-      <div className="flex-shrink-0 px-4 pt-14 pb-4 flex items-center gap-3 border-b border-white/5">
-        <button onClick={onBack}
-          className="w-9 h-9 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center active:bg-white/10">
-          <ArrowRight size={16} className="text-gray-400" />
-        </button>
-        <div className="flex-1">
-          <h2 className="text-white font-black text-xl flex items-center gap-2">
-            <Users size={18} className="text-brand-400" />
-            צוות
-          </h2>
-          <p className="text-gray-500 text-xs mt-0.5">
-            {members.length} חברים{pendingCount > 0 && ` · ${pendingCount} ממתינים לאישור`}
-          </p>
-        </div>
-        {canManage && (
-          <button onClick={() => setShowInvite(true)}
-            className="bg-brand-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl active:bg-brand-600 flex items-center gap-1.5 shadow-lg shadow-brand-500/30">
-            <UserPlus size={14} />הזמנה
+    <div className="h-full flex flex-col bg-gray-50" dir="rtl">
+
+      {/* ── Header ── */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-100 px-4 pt-14 pb-4">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack}
+            className="w-9 h-9 bg-gray-100 rounded-2xl flex items-center justify-center active:bg-gray-200">
+            <ArrowRight size={16} className="text-gray-600" />
           </button>
-        )}
+          <div className="flex-1">
+            <h2 className="text-gray-900 font-black text-xl">ניהול צוות</h2>
+            <p className="text-gray-400 text-xs mt-0.5">
+              {loading ? "טוען..." : `${members.length} חברי צוות`}
+            </p>
+          </div>
+          {canAdd && (
+            <button onClick={() => setShowAdd(true)}
+              className="bg-gray-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl active:bg-gray-800 flex items-center gap-1.5 shadow-sm">
+              <UserPlus size={14} />הוסף חבר/ת
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3">
+      {/* ── Members list ── */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 pb-6 space-y-2.5">
         {loading ? (
-          <div className="flex justify-center py-10">
-            <Loader2 size={28} className="text-brand-400 animate-spin" />
+          <div className="flex justify-center py-14">
+            <Loader2 size={28} className="text-gray-300 animate-spin" />
+          </div>
+        ) : members.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="w-20 h-20 mx-auto rounded-3xl bg-gray-100 flex items-center justify-center text-4xl mb-4">👥</div>
+            <p className="text-gray-900 font-bold text-base">אין חברי צוות עדיין</p>
+            <p className="text-gray-400 text-xs mt-1 mb-5">הוסף אנשים כדי לעבוד יחד על הגיוס</p>
+            {canAdd && (
+              <button onClick={() => setShowAdd(true)}
+                className="bg-gray-900 text-white text-sm font-bold px-5 py-3 rounded-xl active:bg-gray-800 inline-flex items-center gap-2">
+                <UserPlus size={15} />הוסף חבר/ת ראשון/ה
+              </button>
+            )}
           </div>
         ) : (
           <>
-            {/* Pending invitations (sent but not yet signed up) */}
-            {invites.length > 0 && (
-              <div>
-                <p className="text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-2 px-1">
-                  הזמנות פתוחות
-                </p>
-                <div className="space-y-2">
-                  {invites.map((inv) => {
-                    const role = ROLES[inv.role] || ROLES.viewer;
-                    return (
-                      <div key={inv.id} className="bg-[#161616] border border-white/5 rounded-2xl p-3.5 flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
-                          <Mail size={16} className="text-gray-500" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white text-sm font-bold truncate">{inv.email}</p>
-                          <p className="text-gray-500 text-[11px] mt-0.5">{role.label} · ממתין שיצטרף</p>
-                        </div>
-                        {canManage && (
-                          <button onClick={() => cancelInvite(inv.id)}
-                            className="w-8 h-8 rounded-xl bg-white/5 text-gray-500 flex items-center justify-center active:bg-white/10">
-                            <X size={14} />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            {members.map(m => {
+              const isMe    = m.user_id === user?.id;
+              const isOwner = m.role === "owner";
+              // Can open action sheet on someone else who isn't the owner
+              const showAction = !isMe && !isOwner && (canRemove || canEdit);
+              return (
+                <MemberRow key={m.id} m={m} isMe={isMe}
+                  showAction={showAction}
+                  onAction={() => setActionMember(m)} />
+              );
+            })}
 
-            {/* Pending members (signed up, waiting approval) */}
-            {pendingCount > 0 && (
-              <div>
-                <p className="text-amber-400 text-[11px] font-bold uppercase tracking-wide mb-2 px-1 flex items-center gap-1">
-                  <Clock size={11} />ממתינים לאישורך
-                </p>
-                <div className="space-y-2">
-                  {members.filter((m) => m.status === "pending").map((m) => (
-                    <MemberCard key={m.id} m={m} canManage={canManage}
-                      onApprove={() => approveMember(m)}
-                      onReject={() => rejectMember(m)} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Active team */}
-            <div>
-              <p className="text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-2 px-1">
-                חברי צוות פעילים
+            {/* ── Role legend ── */}
+            <div className="mt-4 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+              <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wide mb-3">
+                הרשאות לפי תפקיד
               </p>
-              <div className="space-y-2">
-                {members.filter((m) => m.status === "approved").map((m) => {
-                  const isMe = m.user_id === user?.id;
-                  const isOwner = m.role === "owner";
+              <div className="space-y-2.5">
+                {ROLE_PERMISSIONS.map(({ role, perms }) => {
+                  const r = ROLES[role];
                   return (
-                    <MemberCard key={m.id} m={m} isMe={isMe}
-                      canManage={canManage && !isOwner}
-                      onAction={() => setActionMember(m)} />
+                    <div key={role} className="flex items-start gap-2.5">
+                      <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${r.dot}`} />
+                      <div>
+                        <span className={`text-[11px] font-bold ${r.text}`}>{r.label} </span>
+                        <span className="text-gray-400 text-[11px]">
+                          — {perms.join(" · ")}
+                        </span>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
             </div>
-
-            {/* Empty state */}
-            {!loading && members.length === 0 && invites.length === 0 && (
-              <div className="text-center py-16">
-                <div className="w-20 h-20 mx-auto rounded-3xl bg-white/5 flex items-center justify-center text-4xl mb-4">👥</div>
-                <p className="text-white font-bold">אין חברי צוות</p>
-                <p className="text-gray-500 text-xs mt-1">הזמן/הזמיני את הצוות שלך לעבוד יחד</p>
-              </div>
-            )}
           </>
         )}
       </div>
 
-      {/* Invite modal */}
-      {showInvite && (
-        <InviteModal
+      {/* ── Add member modal ── */}
+      {showAdd && (
+        <AddMemberModal
           restaurant={restaurant}
-          inviterId={user.id}
-          inviterEmail={user.email}
-          onClose={() => setShowInvite(false)}
-          onInvited={() => { setShowInvite(false); load(); }}
+          requesterId={user.id}
+          onClose={() => setShowAdd(false)}
+          onAdded={() => { setShowAdd(false); load(); }}
         />
       )}
 
-      {/* Action sheet for approved members */}
+      {/* ── Action sheet ── */}
       {actionMember && (
         <ActionSheet
           member={actionMember}
+          canRemove={canRemove}
+          canEdit={canEdit}
           onClose={() => setActionMember(null)}
-          onChangeRole={(role) => updateMember(actionMember.id, { role })}
+          onChangeRole={newRole => changeRole(actionMember.id, newRole)}
           onRemove={() => removeMember(actionMember.id)}
         />
       )}
@@ -266,211 +201,308 @@ export default function TeamPage({ restaurant, user, onBack }) {
   );
 }
 
-// ── Member card ──
-function MemberCard({ m, isMe, canManage, onApprove, onReject, onAction }) {
-  const role = ROLES[m.role] || ROLES.viewer;
-  const Icon = role.icon;
-  const isPending = m.status === "pending";
+// ─── Member row card ──────────────────────────────────────────────────────────
+function MemberRow({ m, isMe, showAction, onAction }) {
+  const role    = ROLES[m.role] || ROLES.viewer;
   const profile = m.profile || {};
-  const displayName = profile.name || profile.email || "משתמש";
-  const initials = (displayName.match(/[֐-׿a-zA-Z]/g) || []).slice(0, 2).join("").toUpperCase() || "?";
+  const name    = profile.name || profile.email || "משתמש";
+  const email   = profile.email || "";
+  const initials = name
+    .split(/\s+/).slice(0, 2)
+    .map(w => (w[0] || "").toUpperCase()).join("") || "?";
+
+  // Avatar gradient by role
+  const avatarGrad = {
+    owner:     "from-amber-400 to-orange-500",
+    admin:     "from-purple-500 to-pink-500",
+    recruiter: "from-blue-500 to-cyan-500",
+    viewer:    "from-gray-400 to-gray-500",
+  }[m.role] || "from-gray-400 to-gray-500";
 
   return (
-    <div className="bg-[#161616] border border-white/5 rounded-2xl p-3.5 flex items-center gap-3">
-      <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${role.color} flex items-center justify-center text-white font-black text-sm flex-shrink-0 shadow-md`}>
+    <div className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+      {/* Avatar */}
+      <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${avatarGrad} flex items-center justify-center text-white font-black text-sm flex-shrink-0 shadow-sm`}>
         {initials}
       </div>
+
+      {/* Info */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <p className="text-white text-sm font-bold truncate">{displayName}</p>
-          {isMe && <span className="text-brand-400 text-[10px] font-bold">(אני)</span>}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <p className="text-gray-900 font-bold text-sm truncate">{name}</p>
+          {isMe && <span className="text-gray-400 text-[10px] font-semibold">(אני)</span>}
         </div>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <Icon size={11} className="text-gray-500" />
-          <span className="text-gray-500 text-[11px] font-semibold">{role.label}</span>
-          {profile.email && <span className="text-gray-600 text-[11px] truncate">· {profile.email}</span>}
-        </div>
+        {email && (
+          <p className="text-gray-400 text-[11px] mt-0.5 truncate" dir="ltr">{email}</p>
+        )}
+        {/* Role chip */}
+        <span className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${role.bg} ${role.text}`}>
+          <div className={`w-1 h-1 rounded-full ${role.dot}`} />
+          {role.label}
+        </span>
       </div>
-      {isPending ? (
-        canManage && (
-          <div className="flex gap-1.5 flex-shrink-0">
-            <button onClick={onReject}
-              className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 flex items-center justify-center active:bg-red-500/20">
-              <X size={14} />
-            </button>
-            <button onClick={onApprove}
-              className="w-9 h-9 rounded-xl bg-green-500 text-white flex items-center justify-center active:bg-green-600 shadow-lg shadow-green-500/30">
-              <Check size={14} />
-            </button>
-          </div>
-        )
-      ) : (
-        canManage && (
-          <button onClick={onAction}
-            className="w-9 h-9 rounded-xl bg-white/5 text-gray-400 flex items-center justify-center active:bg-white/10 flex-shrink-0">
-            <MoreVertical size={14} />
-          </button>
-        )
+
+      {/* Action button */}
+      {showAction && (
+        <button onClick={onAction}
+          className="w-9 h-9 rounded-xl bg-gray-50 border border-gray-100 text-gray-400 flex items-center justify-center active:bg-gray-100 flex-shrink-0">
+          <MoreVertical size={15} />
+        </button>
       )}
     </div>
   );
 }
 
-// ── Invite modal ──
-function InviteModal({ restaurant, inviterEmail, inviterId, onClose, onInvited }) {
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("manager");
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
+// ─── Add member modal (bottom sheet) ─────────────────────────────────────────
+function AddMemberModal({ restaurant, requesterId, onClose, onAdded }) {
+  const [name,     setName]     = useState("");
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [showPwd,  setShowPwd]  = useState(false);
+  const [role,     setRole]     = useState("recruiter");
+  const [saving,   setSaving]   = useState(false);
+  const [err,      setErr]      = useState("");
 
-  const send = async () => {
+  const valid =
+    name.trim().length > 1 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
+    password.length >= 6;
+
+  const submit = async () => {
+    if (!valid) return;
     setErr("");
-    const cleanEmail = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      setErr("אמייל לא תקין");
-      return;
-    }
-    if (cleanEmail === (inviterEmail || "").toLowerCase()) {
-      setErr("לא ניתן להזמין את עצמך — את/ה כבר הבעל/ת המסעדה");
-      return;
-    }
-    // Block inviting someone who already has a member row.
-    const { data: existing } = await supabase
-      .from("restaurant_members")
-      .select("user_id")
-      .eq("restaurant_id", restaurant.id);
-    // Need to check by email — fetch the profiles
-    if (existing?.length) {
-      const userIds = existing.map((m) => m.user_id);
-      const { data: profs } = await supabase
-        .from("profiles")
-        .select("id, email")
-        .in("id", userIds);
-      const alreadyMember = (profs || []).some((p) => (p.email || "").toLowerCase() === cleanEmail);
-      if (alreadyMember) {
-        setErr("המשתמש/ת כבר חבר/ה בצוות המסעדה");
-        return;
-      }
-    }
     setSaving(true);
-    const { error } = await supabase.from("restaurant_invitations").insert({
-      restaurant_id: restaurant.id,
-      email: cleanEmail,
-      role,
-      invited_by: inviterId,
+    const { data, error } = await supabase.rpc("create_team_member", {
+      p_email:         email.trim().toLowerCase(),
+      p_password:      password,
+      p_name:          name.trim(),
+      p_restaurant_id: restaurant.id,
+      p_role:          role,
+      p_requester_id:  requesterId,
     });
     setSaving(false);
-    if (error) {
-      setErr(error.code === "23505" ? "הזמנה כבר נשלחה לאמייל זה" : error.message);
+    // The function returns JSON — check both the Supabase-level error and the
+    // data.error field (returned when the function detects a business-logic error).
+    const errMsg = error?.message || data?.error;
+    if (errMsg) {
+      setErr(
+        errMsg.includes("already") || errMsg.includes("duplicate") || errMsg.includes("רשומה")
+          ? "אמייל זה כבר רשום במערכת"
+          : errMsg
+      );
       return;
     }
-    onInvited();
+    onAdded();
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur z-50 flex items-end justify-center"
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4"
       onClick={onClose}>
-      <div className="bg-[#161616] border-t border-white/10 rounded-t-3xl w-full max-w-md p-6 pb-8"
-        onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-white font-black text-lg flex items-center gap-2">
-            <UserPlus size={18} className="text-brand-400" />הזמנת חבר/ת צוות
-          </h3>
-          <button onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-gray-400">
-            <X size={16} />
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md shadow-2xl max-h-[92vh] sm:max-h-[88vh] flex flex-col"
+        onClick={e => e.stopPropagation()}>
+
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div className="w-10 h-1 bg-gray-200 rounded-full sm:hidden" />
+        </div>
+
+        <div className="px-5 pb-8 pt-3 overflow-y-auto flex-1">
+          {/* Title */}
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-gray-900 font-black text-lg flex items-center gap-2">
+              <UserPlus size={18} className="text-gray-500" />
+              הוספת חבר/ת צוות
+            </h3>
+            <button onClick={onClose}
+              className="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500 active:bg-gray-200">
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Name */}
+          <label className="block text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-1.5">
+            שם מלא
+          </label>
+          <input
+            value={name} onChange={e => setName(e.target.value)}
+            placeholder="ישראל ישראלי"
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-3 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900 mb-4"
+          />
+
+          {/* Email */}
+          <label className="block text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-1.5">
+            אמייל
+          </label>
+          <input
+            type="email" dir="ltr" value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="user@example.com"
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-3 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900 mb-4 text-left"
+          />
+
+          {/* Password */}
+          <label className="block text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-1.5">
+            סיסמה
+          </label>
+          <div className="relative mb-4">
+            <input
+              type={showPwd ? "text" : "password"}
+              dir="ltr" value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="מינימום 6 תווים"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-3 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900 text-left pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPwd(v => !v)}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 active:text-gray-600">
+              <Lock size={15} />
+            </button>
+          </div>
+          {password && password.length < 6 && (
+            <p className="text-amber-500 text-[11px] font-semibold -mt-3 mb-3">
+              הסיסמה חייבת להכיל לפחות 6 תווים
+            </p>
+          )}
+
+          {/* Role picker */}
+          <label className="block text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-2">
+            תפקיד
+          </label>
+          <div className="space-y-2 mb-5">
+            {ADDABLE_ROLES.map(r => {
+              const meta = ROLES[r];
+              const Icon = meta.icon;
+              const on   = role === r;
+              return (
+                <button key={r} onClick={() => setRole(r)}
+                  className={`w-full p-3.5 rounded-2xl border text-right flex items-center gap-3 transition-all active:scale-[0.99] ${
+                    on
+                      ? "bg-gray-900 border-gray-900"
+                      : "bg-gray-50 border-gray-200 active:bg-gray-100"
+                  }`}>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    on ? `${meta.bg} ${meta.text}` : "bg-white border border-gray-200 text-gray-500"
+                  }`}>
+                    <Icon size={15} />
+                  </div>
+                  <div className="flex-1">
+                    <p className={`font-bold text-sm ${on ? "text-white" : "text-gray-900"}`}>
+                      {meta.label}
+                    </p>
+                    <p className={`text-[11px] mt-0.5 ${on ? "text-gray-300" : "text-gray-500"}`}>
+                      {ROLE_DESCRIPTIONS[r]}
+                    </p>
+                  </div>
+                  {on && <Check size={16} className="text-white flex-shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Error */}
+          {err && (
+            <p className="text-red-500 text-xs text-center mb-3 font-semibold">{err}</p>
+          )}
+
+          {/* Submit */}
+          <button onClick={submit} disabled={!valid || saving}
+            className="w-full bg-gray-900 text-white font-bold py-3.5 rounded-2xl active:bg-gray-800 disabled:opacity-40 flex items-center justify-center gap-2 transition-opacity">
+            {saving
+              ? <Loader2 size={18} className="animate-spin" />
+              : <><UserPlus size={16} />צור/י חשבון</>}
           </button>
+          <p className="text-gray-400 text-[10px] text-center mt-2 leading-relaxed">
+            החשבון ייווצר מיד — המשתמש/ת יוכלו להיכנס עם האמייל והסיסמה שהגדרת
+          </p>
         </div>
-
-        <label className="text-gray-500 text-[11px] font-bold uppercase tracking-wide block mb-1.5">אמייל</label>
-        <input type="email" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)}
-          placeholder="user@example.com"
-          className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-white text-sm outline-none focus:border-brand-500 text-left mb-4" />
-
-        <label className="text-gray-500 text-[11px] font-bold uppercase tracking-wide block mb-1.5">תפקיד</label>
-        <div className="space-y-2 mb-4">
-          {["admin", "manager", "recruiter", "viewer"].map((r) => {
-            const meta = ROLES[r];
-            const Icon = meta.icon;
-            const on = role === r;
-            return (
-              <button key={r} onClick={() => setRole(r)}
-                className={`w-full p-3 rounded-2xl border text-right flex items-center gap-3 transition-all ${
-                  on
-                    ? "bg-brand-500/15 border-brand-500/40"
-                    : "bg-white/5 border-white/10 active:bg-white/10"
-                }`}>
-                <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${meta.color} flex items-center justify-center text-white`}>
-                  <Icon size={14} />
-                </div>
-                <div className="flex-1">
-                  <p className="text-white font-bold text-sm">{meta.label}</p>
-                  <p className="text-gray-500 text-[11px] mt-0.5">{ROLE_DESCRIPTIONS[r]}</p>
-                </div>
-                {on && <Check size={16} className="text-brand-400" />}
-              </button>
-            );
-          })}
-        </div>
-
-        {err && <p className="text-red-400 text-xs mb-3 text-center">{err}</p>}
-
-        <button onClick={send} disabled={saving || !email.trim()}
-          className="w-full bg-brand-500 text-white font-bold py-3.5 rounded-2xl active:bg-brand-600 disabled:opacity-50 flex items-center justify-center gap-2">
-          {saving ? <Loader2 size={18} className="animate-spin" /> : <><Mail size={16} />שלח הזמנה</>}
-        </button>
-        <p className="text-gray-600 text-[10px] mt-2 text-center leading-relaxed">
-          המוזמן יראה את ההזמנה כשייכנס לאפליקציה עם האמייל הזה
-        </p>
       </div>
     </div>
   );
 }
 
-// ── Action sheet (change role / remove) ──
-function ActionSheet({ member, onClose, onChangeRole, onRemove }) {
-  const [changingRole, setChangingRole] = useState(false);
+// ─── Action sheet ─────────────────────────────────────────────────────────────
+function ActionSheet({ member, canRemove, canEdit, onClose, onChangeRole, onRemove }) {
+  const [view, setView] = useState("main"); // "main" | "role"
+
+  const profile  = member.profile || {};
+  const dispName = profile.name || profile.email || "חבר צוות";
+
+  const confirmRemove = () => {
+    if (window.confirm(`להסיר את "${dispName}" מהמסעדה?\nהחשבון שלהם יימחק לצמיתות.`)) {
+      onRemove();
+    }
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur z-50 flex items-end justify-center"
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4"
       onClick={onClose}>
-      <div className="bg-[#161616] border-t border-white/10 rounded-t-3xl w-full max-w-md p-4 pb-8"
-        onClick={(e) => e.stopPropagation()}>
-        {!changingRole ? (
-          <>
-            <p className="text-center text-gray-500 text-xs py-3 border-b border-white/5">
-              {member.profile?.name || member.profile?.email || "חבר צוות"}
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md shadow-2xl max-h-[92vh] sm:max-h-[88vh] flex flex-col"
+        onClick={e => e.stopPropagation()}>
+
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div className="w-10 h-1 bg-gray-200 rounded-full sm:hidden" />
+        </div>
+
+        {view === "main" ? (
+          <div className="px-4 pt-2 pb-8 overflow-y-auto flex-1">
+            <p className="text-center text-gray-500 text-xs font-semibold pb-3 border-b border-gray-100">
+              {dispName}
             </p>
-            <button onClick={() => setChangingRole(true)}
-              className="w-full py-4 text-white font-semibold text-right px-3 active:bg-white/5 border-b border-white/5">
-              שנה תפקיד
-            </button>
-            <button onClick={onRemove}
-              className="w-full py-4 text-red-400 font-semibold text-right px-3 active:bg-red-500/10 flex items-center gap-2">
-              <Trash2 size={14} />הסרה מהמסעדה
-            </button>
+
+            {canEdit && (
+              <button onClick={() => setView("role")}
+                className="w-full py-4 text-gray-900 font-semibold text-right px-3 active:bg-gray-50 rounded-xl flex items-center gap-2">
+                <ChevronDown size={15} className="text-gray-400" />
+                שינוי תפקיד
+              </button>
+            )}
+
+            {canRemove && (
+              <button onClick={confirmRemove}
+                className="w-full py-4 text-red-600 font-semibold text-right px-3 active:bg-red-50 rounded-xl flex items-center gap-2">
+                <Trash2 size={15} className="text-red-500" />
+                הסרה מהמסעדה ומחיקת חשבון
+              </button>
+            )}
+
             <button onClick={onClose}
-              className="w-full mt-2 py-3 text-gray-500 font-semibold">ביטול</button>
-          </>
+              className="w-full mt-1 py-3.5 text-gray-400 font-semibold rounded-xl active:bg-gray-50">
+              ביטול
+            </button>
+          </div>
         ) : (
-          <>
-            <p className="text-white font-bold text-center py-3 border-b border-white/5 mb-2">בחירת תפקיד חדש</p>
-            {["admin", "manager", "recruiter", "viewer"].map((r) => {
-              const meta = ROLES[r];
-              const on = member.role === r;
-              return (
-                <button key={r} onClick={() => onChangeRole(r)}
-                  className={`w-full py-3 px-3 text-right active:bg-white/5 flex items-center gap-3 ${
-                    on ? "bg-brand-500/10" : ""
-                  }`}>
-                  <span className="flex-1 text-white text-sm font-semibold">{meta.label}</span>
-                  {on && <Check size={14} className="text-brand-400" />}
-                </button>
-              );
-            })}
-            <button onClick={() => setChangingRole(false)}
-              className="w-full mt-2 py-3 text-gray-500 font-semibold">חזרה</button>
-          </>
+          <div className="px-4 pt-2 pb-8 overflow-y-auto flex-1">
+            <p className="text-gray-900 font-bold text-center py-3 border-b border-gray-100 mb-2">
+              בחירת תפקיד חדש
+            </p>
+            <div className="space-y-1">
+              {ADDABLE_ROLES.map(r => {
+                const meta = ROLES[r];
+                const Icon = meta.icon;
+                const on   = member.role === r;
+                return (
+                  <button key={r} onClick={() => onChangeRole(r)}
+                    className={`w-full py-3.5 px-3 text-right rounded-xl active:bg-gray-50 flex items-center gap-3 ${
+                      on ? "bg-gray-50" : ""
+                    }`}>
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${meta.bg} ${meta.text}`}>
+                      <Icon size={14} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-gray-900 text-sm font-bold">{meta.label}</p>
+                      <p className="text-gray-400 text-[11px]">{ROLE_DESCRIPTIONS[r]}</p>
+                    </div>
+                    {on && <Check size={15} className="text-gray-900" />}
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => setView("main")}
+              className="w-full mt-2 py-3.5 text-gray-400 font-semibold rounded-xl active:bg-gray-50">
+              חזרה
+            </button>
+          </div>
         )}
       </div>
     </div>
