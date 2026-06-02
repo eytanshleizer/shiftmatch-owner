@@ -1,0 +1,265 @@
+{
+  "name": "WhatsApp Apply — Inbound (button tap → update + reveal)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa-apply-reply",
+        "responseMode": "onReceived",
+        "responseData": "noData",
+        "options": {}
+      },
+      "id": "b1111111-1111-1111-1111-111111111111",
+      "name": "Webhook · twilio inbound",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-80, 300],
+      "webhookId": "wa-apply-reply"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// (#5) Decode the button payload back into an action + application id.\n// Twilio returns the tapped quick-reply button's payload as ButtonPayload;\n// fall back to typed text (Body) so a manual 'accept:<id>' also works.\nconst b = $json.body || {};\nconst raw = String(b.ButtonPayload || b.Payload || b.Body || '').trim();\nconst m = raw.match(/^(accept|reject):([0-9a-fA-F-]{36})$/);\nif (!m) {\n  return { action: 'unknown', raw, from: b.From || '' };\n}\nconst action = m[1].toLowerCase();\nreturn {\n  action,\n  action_status: action === 'accept' ? 'accepted' : 'rejected',\n  application_id: m[2],\n  from: b.From || ''\n};"
+      },
+      "id": "b2222222-2222-2222-2222-222222222222",
+      "name": "Parse payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "known-action",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "unknown",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b3333333-3333-3333-3333-333333333333",
+      "name": "Gate · valid payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE applications\n   SET status = $2\n WHERE id = $1\n   AND status IN ('new', 'viewed')\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $json.application_id }},={{ $json.action_status }}"
+        }
+      },
+      "id": "b4444444-4444-4444-4444-444444444444",
+      "name": "Decide · update status (idempotent)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 300],
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_POSTGRES_CREDENTIAL", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "row-returned",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b5555555-5555-5555-5555-555555555555",
+      "name": "Gate · first decision wins (#8)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+                "conditions": [
+                  {
+                    "id": "is-accept",
+                    "leftValue": "={{ $('Parse payload').item.json.action }}",
+                    "rightValue": "accept",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "accept"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+                "conditions": [
+                  {
+                    "id": "is-reject",
+                    "leftValue": "={{ $('Parse payload').item.json.action }}",
+                    "rightValue": "reject",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "reject"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b6666666-6666-6666-6666-666666666666",
+      "name": "Switch · accept / reject",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1140, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.name AS name, p.phone AS phone\n  FROM profiles p\n  JOIN applications a ON a.user_id = p.id\n WHERE a.id = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Parse payload').item.json.application_id }}"
+        }
+      },
+      "id": "b7777777-7777-7777-7777-777777777777",
+      "name": "Fetch contact",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1380, 200],
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_POSTGRES_CREDENTIAL", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Reveal contact details — free-form, allowed because the button tap opened\n// a fresh 24h window. (#4) normalize for the wa.me link.\nconst c = $json;\nfunction toE164(raw) {\n  let x = String(raw || '').replace(/\\D/g, '');\n  if (!x) return null;\n  if (x.startsWith('972')) return '+' + x;\n  if (x.startsWith('0'))   x = x.slice(1);\n  return '+972' + x;\n}\nconst e164 = toE164(c.phone);\nconst wa = e164 ? 'https://wa.me/' + e164.replace('+', '') : '';\nconst body = '✅ אישרת את ' + (c.name || 'המועמד/ת') + '!\\n\\n' +\n  (c.phone ? '📞 טלפון: ' + c.phone + '\\n' : '') +\n  (wa ? '💬 WhatsApp: ' + wa + '\\n' : '') +\n  '\\nבהצלחה! הפנייה סומנה כ\"אושר\" במערכת.';\nreturn { to: $('Parse payload').item.json.from, body };"
+      },
+      "id": "b8888888-8888-8888-8888-888888888888",
+      "name": "Build accept message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1620, 200]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const body = '❌ דחית את המועמד/ת. הפרטים לא נחשפו והפנייה סומנה כ\"נדחה\".';\nreturn { to: $('Parse payload').item.json.from, body };"
+      },
+      "id": "b9999999-9999-9999-9999-999999999999",
+      "name": "Build reject message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1380, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/REPLACE_WITH_TWILIO_ACCOUNT_SID/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "To", "value": "={{ $json.to }}" },
+            { "name": "From", "value": "whatsapp:+14155238886" },
+            { "name": "Body", "value": "={{ $json.body }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "baaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "name": "Twilio · send result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1860, 300],
+      "credentials": {
+        "httpBasicAuth": { "id": "REPLACE_WITH_TWILIO_CREDENTIAL", "name": "Twilio (SID + Auth Token)" }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "name": "Skip · invalid or already decided",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 480]
+    },
+    {
+      "parameters": {
+        "content": "## ⚠️ #6 (yellow) — Twilio signature\nBefore going live, validate `X-Twilio-Signature` on this webhook so nobody can forge an 'accept'. Add a Code/Crypto check right after the Webhook node using your Twilio Auth Token.\n\n## Green (already wired)\n- #5 payload decode `accept:<id>` / `reject:<id>`\n- #7 server-side `UPDATE` via Postgres role (bypasses RLS)\n- #8 idempotency: `WHERE status IN ('new','viewed')` + 'first decision wins' gate\n- #4 phone → E.164 for the wa.me link",
+        "height": 300,
+        "width": 380
+      },
+      "id": "bccccccc-cccc-cccc-cccc-cccccccccccc",
+      "name": "Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 460]
+    }
+  ],
+  "connections": {
+    "Webhook · twilio inbound": {
+      "main": [[{ "node": "Parse payload", "type": "main", "index": 0 }]]
+    },
+    "Parse payload": {
+      "main": [[{ "node": "Gate · valid payload", "type": "main", "index": 0 }]]
+    },
+    "Gate · valid payload": {
+      "main": [
+        [{ "node": "Decide · update status (idempotent)", "type": "main", "index": 0 }],
+        [{ "node": "Skip · invalid or already decided", "type": "main", "index": 0 }]
+      ]
+    },
+    "Decide · update status (idempotent)": {
+      "main": [[{ "node": "Gate · first decision wins (#8)", "type": "main", "index": 0 }]]
+    },
+    "Gate · first decision wins (#8)": {
+      "main": [
+        [{ "node": "Switch · accept / reject", "type": "main", "index": 0 }],
+        [{ "node": "Skip · invalid or already decided", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch · accept / reject": {
+      "main": [
+        [{ "node": "Fetch contact", "type": "main", "index": 0 }],
+        [{ "node": "Build reject message", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch contact": {
+      "main": [[{ "node": "Build accept message", "type": "main", "index": 0 }]]
+    },
+    "Build accept message": {
+      "main": [[{ "node": "Twilio · send result", "type": "main", "index": 0 }]]
+    },
+    "Build reject message": {
+      "main": [[{ "node": "Twilio · send result", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}
