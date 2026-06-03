@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Plus, X, Check, Calendar, Moon, Sun, PartyPopper,
-  Loader2, ChevronDown, ChevronUp, Trash2, HelpCircle
+  Loader2, ChevronDown, ChevronUp, Trash2, HelpCircle, AlertCircle
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { can } from "../lib/permissions";
@@ -241,6 +241,13 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
   );
   const openCount = positions.filter((p) => p.is_open).length;
 
+  // Setup nudge — open positions still missing pay or worker requirements.
+  // This data flows to the waiter app, so flag it until it's filled in.
+  const needSalary = positions.filter((p) => p.is_open && !(p.hourly_rate > 0));
+  const needReqs   = positions.filter((p) => p.is_open && countSetReqs(p.requirements || {}) === 0);
+  const posNeedsSetup = (p) =>
+    p.is_open && (!(p.hourly_rate > 0) || countSetReqs(p.requirements || {}) === 0);
+
   return (
     <div className="bg-gray-50 min-h-full pb-24 text-gray-900" dir="rtl">
 
@@ -260,6 +267,41 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
         {!canEdit && (
           <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded-2xl px-4 py-3">
             🔒 התפקיד שלך אינו מאפשר עריכת משרות — צפייה בלבד.
+          </div>
+        )}
+
+        {/* ── Setup nudge — guides owners to fill pay + requirements so the data
+            flows to the waiter app and listings stop showing "לפי סיכום". ── */}
+        {canEdit && !loading && (needSalary.length > 0 || needReqs.length > 0) && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <AlertCircle size={16} className="text-red-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-red-900 font-bold text-sm">השלמת פרטי המשרות</p>
+                <p className="text-red-700 text-xs mt-0.5 leading-relaxed">
+                  כדי שהמלצרים יראו את המשרות שלך כמו שצריך, יש למלא לכל משרה:
+                </p>
+                <div className="flex flex-col gap-1 mt-2">
+                  {needSalary.length > 0 && (
+                    <span className="text-red-800 text-xs font-semibold flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+                      שכר לשעה חסר ב־{needSalary.length} {needSalary.length === 1 ? "משרה" : "משרות"}
+                    </span>
+                  )}
+                  {needReqs.length > 0 && (
+                    <span className="text-red-800 text-xs font-semibold flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+                      דרישות מהעובד חסרות ב־{needReqs.length} {needReqs.length === 1 ? "משרה" : "משרות"}
+                    </span>
+                  )}
+                </div>
+                <p className="text-red-600 text-[11px] mt-2">
+                  לחצ/י על משרה עם נקודה אדומה כדי להשלים את הפרטים ↓
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -322,8 +364,13 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
 
                     {/* ── Card header ── */}
                     <div className="p-4 flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-gray-100 flex items-center justify-center text-xl flex-shrink-0">
-                        {emoji}
+                      <div className="relative flex-shrink-0">
+                        <div className="w-11 h-11 rounded-2xl bg-gray-100 flex items-center justify-center text-xl">
+                          {emoji}
+                        </div>
+                        {posNeedsSetup(p) && (
+                          <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full ring-2 ring-white" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-gray-900 font-bold text-sm">
@@ -362,12 +409,21 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                         <ReqSection label="פרטי המשרה">
                           <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <FieldLabel>שכר לשעה (₪)</FieldLabel>
+                              <FieldLabel>
+                                שכר לשעה (₪)
+                                {!(p.hourly_rate > 0) && (
+                                  <span className="text-red-500 mr-1 normal-case">· חסר</span>
+                                )}
+                              </FieldLabel>
                               <input type="number" min="0" disabled={!canEdit}
                                 defaultValue={p.hourly_rate || ""}
                                 onBlur={(e) => setSalary(p, e.target.value)}
                                 placeholder="50"
-                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900 disabled:opacity-50 text-center font-bold" />
+                                className={`w-full rounded-xl px-3 py-2.5 text-gray-900 text-sm outline-none focus:bg-white disabled:opacity-50 text-center font-bold border ${
+                                  p.hourly_rate > 0
+                                    ? "bg-gray-50 border-gray-200 focus:border-gray-900"
+                                    : "bg-red-50 border-red-300 focus:border-red-500"
+                                }`} />
                             </div>
                             <div>
                               <FieldLabel>כמות משרות פתוחות</FieldLabel>

@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { ROLE_LABEL } from "../lib/permissions";
+import { needsSetup } from "../lib/setup";
 import HomeTab         from "./HomeTab";
 import JobsTab         from "./JobsTab";
 import CalendarTab     from "./CalendarTab";
@@ -36,6 +37,10 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
     if (id === "plans") setPlansOpen(true);
     else setTab(id);
   };
+
+  // Nudge owners who finished signup but haven't set pay / requirements per
+  // position — shows a red dot on the משרות tab until it's filled in.
+  const jobsNeedSetup = needsSetup(restaurant);
 
   return (
     <div className="h-full w-full flex justify-center bg-gray-200">
@@ -113,6 +118,9 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
                     <Icon size={20}
                       strokeWidth={active ? 2.2 : 1.5}
                       className={active ? "text-gray-900" : "text-gray-400"} />
+                    {id === "jobs" && jobsNeedSetup && (
+                      <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white" />
+                    )}
                   </div>
                   <span className={`text-[10px] font-semibold transition-colors duration-200 ${active ? "text-gray-900" : "text-gray-400"}`}>
                     {label}
