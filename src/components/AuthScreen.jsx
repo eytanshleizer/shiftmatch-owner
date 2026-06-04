@@ -169,7 +169,7 @@ export default function AuthScreen() {
   const verifyCode = async () => {
     if (!pendingConfirmation?.email) return;
     const token = code.replace(/\D/g, "").trim();
-    if (token.length !== 6) { setCodeError("הקוד הוא 6 ספרות"); return; }
+    if (token.length < 6) { setCodeError("הזן/י את הקוד המלא מהמייל"); return; }
     setCodeError(""); setVerifying(true);
     try {
       const { data, error: e } = await supabase.auth.verifyOtp({
@@ -207,13 +207,13 @@ export default function AuthScreen() {
           {/* Code input */}
           <input
             value={code}
-            onChange={(e) => { setCode(e.target.value.replace(/\D/g, "").slice(0, 6)); setCodeError(""); }}
+            onChange={(e) => { setCode(e.target.value.replace(/\D/g, "").slice(0, 10)); setCodeError(""); }}
             onKeyDown={(e) => e.key === "Enter" && verifyCode()}
             inputMode="numeric"
             autoComplete="one-time-code"
             placeholder="••••••"
             dir="ltr"
-            className="mt-7 w-56 text-center tracking-[0.5em] text-3xl font-black bg-gray-50 border-2 border-gray-200 rounded-2xl py-4 text-gray-900 placeholder-gray-300 outline-none focus:bg-white focus:border-gray-900 transition-colors"
+            className="mt-7 w-72 text-center tracking-[0.3em] text-3xl font-black bg-gray-50 border-2 border-gray-200 rounded-2xl py-4 text-gray-900 placeholder-gray-300 outline-none focus:bg-white focus:border-gray-900 transition-colors"
           />
 
           {codeError && (
@@ -226,7 +226,7 @@ export default function AuthScreen() {
         </div>
         <div className="px-6 pb-8 safe-bottom space-y-2">
           {/* Verify */}
-          <PrimaryButton onClick={verifyCode} disabled={verifying || code.length !== 6} loading={verifying}>
+          <PrimaryButton onClick={verifyCode} disabled={verifying || code.length < 6} loading={verifying}>
             {verifying ? "מאמת..." : "אימות"}
           </PrimaryButton>
 
