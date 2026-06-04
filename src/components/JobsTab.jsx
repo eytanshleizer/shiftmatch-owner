@@ -69,6 +69,10 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
   const positionsRef = useRef([]);
   const writeState = (list) => { positionsRef.current = list; setPositions(list); };
 
+  // Guards the "add positions" commit against rapid double-presses creating
+  // duplicate rows before the first insert+refetch completes.
+  const addingRef = useRef(false);
+
   // Per-position debounce timers so quick taps coalesce into one DB write.
   const shiftTimers = useRef({});
   useEffect(() => () => {
@@ -204,61 +208,71 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
     if (expandedPos === p.id) setExpandedPos(null);
   };
 
-  // Insert one template-backed position + copy its default screening questions.
-  // Guards against duplicates by template_id and by name so a stray double-tap
-  // can never create two identical rows.
-  const insertTemplate = async (tmpl, existingNames, existingTemplateIds) => {
-    if (existingTemplateIds.has(tmpl.id) || existingNames.has(tmpl.name)) return null;
-    existingTemplateIds.add(tmpl.id);
-    existingNames.add(tmpl.name);
-
-    const { data: inserted } = await supabase
-      .from("restaurant_positions")
-      .insert({
-        restaurant_id: restaurant.id,
-        template_id:   tmpl.id,
-        name:          tmpl.name,
-        hourly_rate:   restaurant.hourly_rate || 0,
-        open_count:    1,
-        is_open:       true,
-        shifts:        restaurant.shifts || [],
-        requirements:  {},
-      })
-      .select().single();
-
-    // Copy the template's default screening questions onto this position.
-    const { data: defs } = await supabase
-      .from("screening_question_templates")
-      .select("*").eq("position_template_id", tmpl.id).order("sort_order");
-    if (defs?.length && inserted) {
-      await supabase.from("position_screening_questions").insert(
-        defs.map((d) => ({
-          position_id: inserted.id,
-          template_id: d.id,
-          question:    d.question,
-          answer_type: d.answer_type,
-          options:     d.options,
-          enabled:     true,
-          is_required: false,
-          sort_order:  d.sort_order,
-        }))
-      );
-    }
-    return inserted;
-  };
-
   // Add several catalog positions at once (multi-select in the modal).
+  // Fast: one bulk insert for the positions + one bulk insert for their default
+  // screening questions. Guarded by addingRef so rapid double-presses can't
+  // fire a second insert before the first finishes (which is what created
+  // duplicate rows before).
   const addTemplates = (tmpls) => {
+    if (addingRef.current) return;          // already committing — ignore re-press
     if (!tmpls.length) { setShowAdd(false); return; }
-    const existingNames       = new Set(positionsRef.current.map((p) => p.name));
-    const existingTemplateIds = new Set(positionsRef.current.map((p) => p.template_id).filter(Boolean));
+    addingRef.current = true;
+    setShowAdd(false);                       // close immediately so it feels instant
+
+    // Dedupe against what's already there, by name and template_id.
+    const haveNames = new Set(positionsRef.current.map((p) => p.name));
+    const haveTids  = new Set(positionsRef.current.map((p) => p.template_id).filter(Boolean));
+    const toAdd = tmpls.filter((t) => !haveTids.has(t.id) && !haveNames.has(t.name));
+
     let lastId = null;
     mutate(async () => {
-      for (const tmpl of tmpls) {
-        const inserted = await insertTemplate(tmpl, existingNames, existingTemplateIds);
-        if (inserted) lastId = inserted.id;
+      if (!toAdd.length) return;
+      // 1) Bulk-insert the positions in a single round-trip.
+      const { data: inserted } = await supabase
+        .from("restaurant_positions")
+        .insert(toAdd.map((t) => ({
+          restaurant_id: restaurant.id,
+          template_id:   t.id,
+          name:          t.name,
+          hourly_rate:   restaurant.hourly_rate || 0,
+          open_count:    1,
+          is_open:       true,
+          shifts:        restaurant.shifts || [],
+          requirements:  {},
+        })))
+        .select();
+      if (!inserted?.length) return;
+      lastId = inserted[inserted.length - 1].id;
+
+      // 2) Pull all default screening questions for these templates at once,
+      //    then bulk-insert one row per (position × question).
+      const { data: defs } = await supabase
+        .from("screening_question_templates")
+        .select("*")
+        .in("position_template_id", toAdd.map((t) => t.id))
+        .order("sort_order");
+      if (defs?.length) {
+        const rows = [];
+        inserted.forEach((pos) => {
+          defs.filter((d) => d.position_template_id === pos.template_id).forEach((d) => {
+            rows.push({
+              position_id: pos.id,
+              template_id: d.id,
+              question:    d.question,
+              answer_type: d.answer_type,
+              options:     d.options,
+              enabled:     true,
+              is_required: false,
+              sort_order:  d.sort_order,
+            });
+          });
+        });
+        if (rows.length) await supabase.from("position_screening_questions").insert(rows);
       }
-    }).then(() => { if (lastId) setExpandedPos(lastId); setShowAdd(false); });
+    }).then(() => {
+      if (lastId) setExpandedPos(lastId);
+      addingRef.current = false;
+    });
   };
 
   const addCustomPosition = (name) => {
@@ -734,11 +748,14 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
 function AddPositionModal({ templates, onClose, onAddTemplates, onAddCustom }) {
   const [customName, setCustomName] = useState("");
   const [selected, setSelected]     = useState([]); // array of template ids
+  const [submitting, setSubmitting] = useState(false);
 
   const toggle = (id) =>
     setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
   const commit = () => {
+    if (submitting || selected.length === 0) return;  // ignore double-press
+    setSubmitting(true);
     const picked = templates.filter((t) => selected.includes(t.id));
     onAddTemplates(picked);
   };
@@ -800,12 +817,16 @@ function AddPositionModal({ templates, onClose, onAddTemplates, onAddCustom }) {
         </div>
 
         {/* Commit selected catalog roles */}
-        <button onClick={commit} disabled={selected.length === 0}
+        <button onClick={commit} disabled={selected.length === 0 || submitting}
           className="w-full bg-gray-900 text-white font-bold py-3.5 rounded-full text-sm active:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 flex items-center justify-center gap-2 mt-1">
-          <Check size={16} />
-          {selected.length === 0 ? "בחר/י משרות להוספה"
-            : selected.length === 1 ? "הוספת משרה אחת"
-            : `הוספת ${selected.length} משרות`}
+          {submitting
+            ? <><Loader2 size={16} className="animate-spin" />מוסיף…</>
+            : <>
+                <Check size={16} />
+                {selected.length === 0 ? "בחר/י משרות להוספה"
+                  : selected.length === 1 ? "הוספת משרה אחת"
+                  : `הוספת ${selected.length} משרות`}
+              </>}
         </button>
       </div>
     </div>
