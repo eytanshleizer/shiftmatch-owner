@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Plus, X, Check, Calendar, Moon, Sun, PartyPopper,
-  Loader2, ChevronDown, ChevronUp, Trash2, HelpCircle, AlertCircle, Sparkles
+  Loader2, ChevronDown, ChevronUp, Trash2, HelpCircle, AlertCircle, Sparkles, CheckCheck
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { can } from "../lib/permissions";
@@ -63,6 +63,18 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
   const [expandedPos, setExpandedPos] = useState(null);
   const [showAdd,   setShowAdd]   = useState(false);
 
+  // Live mirror of `positions` so optimistic updates read the freshest array
+  // (not the value captured at render time) — this is what stops rapid shift
+  // toggles from racing and overwriting each other.
+  const positionsRef = useRef([]);
+  const writeState = (list) => { positionsRef.current = list; setPositions(list); };
+
+  // Per-position debounce timers so quick taps coalesce into one DB write.
+  const shiftTimers = useRef({});
+  useEffect(() => () => {
+    Object.values(shiftTimers.current).forEach((t) => clearTimeout(t));
+  }, []);
+
   const mandatoryShifts = restaurant?.mandatory_shifts || [];
 
   // ── Data layer ──────────────────────────────────────────────────────────────
@@ -95,7 +107,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
       fetchPositions(),
       supabase.from("position_templates").select("*").order("sort_order"),
     ]);
-    setPositions(list);
+    writeState(list);
     setTemplates(tmpl || []);
     setLoading(false);
   };
@@ -117,32 +129,73 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
     onUpdate?.({ ...restaurant, ...patch });
   };
 
-  // Run a mutation, then refresh state + legacy sync.
+  // Run a mutation that changes structure (add/remove/questions), then refresh
+  // state + legacy sync. Used for things that aren't simple field edits.
   const mutate = async (fn) => {
     if (!canEdit) return;
     setSaving(true);
     await fn();
     const list = await fetchPositions();
-    setPositions(list);
+    writeState(list);
     await syncLegacy(list);
     setSaving(false);
   };
 
   // ── Position-level mutations ──────────────────────────────────────────────────
-  const updatePosition = (id, patch) => mutate(() =>
-    supabase.from("restaurant_positions").update(patch).eq("id", id));
+  // Optimistic field update — apply to the live array immediately (snappy, no
+  // refetch), then persist in the background. Reading from positionsRef.current
+  // means concurrent edits build on each other instead of clobbering.
+  const patchPosition = (id, patch, persist = true) => {
+    if (!canEdit) return;
+    const next = positionsRef.current.map((p) =>
+      p.id === id ? { ...p, ...patch } : p);
+    writeState(next);
+    if (persist) {
+      setSaving(true);
+      supabase.from("restaurant_positions").update(patch).eq("id", id)
+        .then(() => syncLegacy(next))
+        .finally(() => setSaving(false));
+    }
+  };
 
   const setReqs = (p, patch) =>
-    updatePosition(p.id, { requirements: { ...(p.requirements || {}), ...patch } });
+    patchPosition(p.id, { requirements: { ...(positionsRef.current.find((x) => x.id === p.id)?.requirements || {}), ...patch } });
 
-  const togglePosition = (p) => updatePosition(p.id, { is_open: !p.is_open });
-  const setSalary = (p, val) => updatePosition(p.id, { hourly_rate: parseInt(val) || 0 });
-  const setCount  = (p, val) => updatePosition(p.id, { open_count: Math.max(1, parseInt(val) || 1) });
+  const togglePosition = (p) => patchPosition(p.id, { is_open: !p.is_open });
+  const setSalary = (p, val) => patchPosition(p.id, { hourly_rate: parseInt(val) || 0 });
+  const setCount  = (p, val) => patchPosition(p.id, { open_count: Math.max(1, parseInt(val) || 1) });
+
+  // Toggle a single day-shift. Updates the UI instantly off the freshest array,
+  // then debounces the DB write per-position so a burst of taps collapses into
+  // one update with the final array (no races, no flicker).
+  const persistShifts = (id) => {
+    const cur = positionsRef.current.find((x) => x.id === id);
+    if (!cur) return;
+    setSaving(true);
+    supabase.from("restaurant_positions").update({ shifts: cur.shifts || [] }).eq("id", id)
+      .then(() => syncLegacy(positionsRef.current))
+      .finally(() => setSaving(false));
+  };
+
+  const queueShiftPersist = (id) => {
+    clearTimeout(shiftTimers.current[id]);
+    shiftTimers.current[id] = setTimeout(() => persistShifts(id), 400);
+  };
 
   const toggleDayShift = (p, shift) => {
-    const cur = p.shifts || [];
+    if (!canEdit) return;
+    const cur = positionsRef.current.find((x) => x.id === p.id)?.shifts || [];
     const next = cur.includes(shift) ? cur.filter((s) => s !== shift) : [...cur, shift];
-    updatePosition(p.id, { shifts: next });
+    patchPosition(p.id, { shifts: next }, false);  // optimistic only
+    queueShiftPersist(p.id);
+  };
+
+  const setAllShifts = (p) => {
+    if (!canEdit) return;
+    const cur = positionsRef.current.find((x) => x.id === p.id)?.shifts || [];
+    const allOn = DAY_SHIFTS.every((s) => cur.includes(s));
+    patchPosition(p.id, { shifts: allOn ? [] : [...DAY_SHIFTS] }, false);
+    queueShiftPersist(p.id);
   };
 
   const removePosition = (p) => {
@@ -494,6 +547,15 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                         {/* ─ Shifts for this position ─ */}
                         <ReqSection label="משמרות למשרה זו">
                           <div className="flex flex-wrap gap-2 mt-2">
+                            <button onClick={() => setAllShifts(p)} disabled={!canEdit}
+                              className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center gap-1 ${
+                                DAY_SHIFTS.every((s) => (p.shifts || []).includes(s))
+                                  ? "bg-gray-900 text-white border-gray-900"
+                                  : "bg-gray-100 text-gray-700 border-gray-200 active:bg-gray-200"
+                              } disabled:opacity-50`}>
+                              <CheckCheck size={12} />
+                              {DAY_SHIFTS.every((s) => (p.shifts || []).includes(s)) ? "בטל הכל" : "בחר הכל"}
+                            </button>
                             {DAY_SHIFTS.map((s) => (
                               <SmallChip key={s} on={(p.shifts || []).includes(s)} disabled={!canEdit}
                                 onClick={() => toggleDayShift(p, s)}>
