@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { ChevronLeft, Loader2, Check, X, ImageOff } from "lucide-react";
+import { ChevronLeft, Loader2, Check, X, Upload, Trash2 } from "lucide-react";
 import { logEvent } from "../lib/tracking";
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
+import { uploadRestaurantPhoto } from "../lib/uploadPhoto";
 
 // Local storage key for the wizard draft — scoped per user.
 const draftKey = (uid) => `shiftmatch:wizard_draft:${uid}`;
@@ -268,9 +269,7 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
 
         {stepId === "photo" && (
           <PhotoStep
-            name={d.name}
-            city={d.city}
-            type={d.type}
+            userId={user?.id}
             value={d.imageUrl}
             onChange={(url) => set({ imageUrl: url })}
           />
@@ -314,106 +313,77 @@ export default function WizardOnboarding({ user, onDone, onClose }) {
   );
 }
 
-// ── Photo step — searches Google Places / falls back to Unsplash ──────────────
-function PhotoStep({ name, city, type, value, onChange }) {
-  const [photos,  setPhotos]  = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [source,  setSource]  = useState(null);
+// ── Photo step — owner uploads a real photo of their restaurant ───────────────
+function PhotoStep({ userId, value, onChange }) {
+  const [uploading, setUploading] = useState(false);
+  const [err,       setErr]       = useState("");
+  const inputRef = useRef(null);
 
-  useEffect(() => {
-    if (!name) return;
-    setLoading(true);
-    setPhotos([]);
+  const pick = () => inputRef.current?.click();
 
-    const params = new URLSearchParams({
-      name: name || "",
-      city: city || "",
-      type: type || "",
-    });
-
-    fetch(`/api/restaurant-photos?${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setPhotos(data.photos || []);
-        setSource(data.source || null);
-      })
-      .catch(() => {
-        setPhotos([]);
-      })
-      .finally(() => setLoading(false));
-  }, [name, city, type]);
-
-  const subtitle = source === "google_places"
-    ? `תמונות אמיתיות של ${name} ממפות גוגל`
-    : `תמונות לפי סוג המסעדה`;
-
-  if (loading) {
-    return (
-      <Step title="מחפשים תמונה..." sub={`מחפשים תמונות של ${name}...`}>
-        <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <Loader2 size={32} className="animate-spin text-gray-400" />
-          <p className="text-gray-400 text-sm">זה לוקח כמה שניות</p>
-        </div>
-      </Step>
-    );
-  }
-
-  if (!photos.length) {
-    return (
-      <Step title="תמונה למסעדה" sub="לא נמצאו תמונות. ניתן להוסיף מאוחר יותר דרך ההגדרות.">
-        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-2xl p-10 flex flex-col items-center gap-3">
-          <ImageOff size={32} className="text-gray-300" />
-          <p className="text-gray-400 text-sm text-center">לא נמצאו תמונות עבור {name}</p>
-        </div>
-      </Step>
-    );
-  }
+  const onFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";          // allow re-picking the same file
+    if (!file) return;
+    setErr(""); setUploading(true);
+    try {
+      const url = await uploadRestaurantPhoto(file, userId || "misc");
+      onChange(url);
+    } catch (ex) {
+      setErr(ex.message || "ההעלאה נכשלה, נסו שוב");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
-    <Step title="בחר/י תמונה" sub={subtitle}>
-      <div className="grid grid-cols-2 gap-3">
-        {photos.map((url, i) => {
-          const selected = value === url;
-          return (
-            <button
-              key={i}
-              onClick={() => onChange(selected ? null : url)}
-              className={`relative rounded-2xl overflow-hidden border-2 transition-all duration-200 ${
-                selected
-                  ? "border-gray-900 shadow-lg"
-                  : "border-transparent active:scale-[0.97]"
-              }`}
-              style={{ aspectRatio: "1 / 1" }}
-            >
-              <img
-                src={url}
-                alt={`תמונה ${i + 1}`}
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-              {/* Checkmark overlay when selected */}
-              {selected && (
-                <div className="absolute inset-0 bg-gray-900/25 flex items-center justify-center">
-                  <div className="w-9 h-9 rounded-full bg-gray-900 border-2 border-white flex items-center justify-center shadow-lg">
-                    <Check size={18} className="text-white" />
-                  </div>
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
+    <Step title="תמונת המסעדה"
+      sub="העלו תמונה אמיתית של המסעדה שלכם — כך מלצרים יראו בדיוק איך זה נראה.">
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onFile} />
 
-      {value && (
-        <div className="mt-3 bg-gray-50 border border-gray-200 rounded-2xl p-3 flex items-center gap-2">
-          <img src={value} alt="נבחרה" className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
-          <p className="text-gray-700 text-xs font-semibold flex-1">תמונה נבחרה ✓</p>
-          <button onClick={() => onChange(null)}
-            className="text-gray-400 text-xs underline active:text-gray-700">
-            בטל
-          </button>
+      {value ? (
+        <div className="space-y-3">
+          <div className="relative rounded-2xl overflow-hidden border border-gray-200"
+            style={{ aspectRatio: "16 / 10" }}>
+            <img src={value} alt="תמונת המסעדה" className="w-full h-full object-cover" />
+            {uploading && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                <Loader2 size={28} className="animate-spin text-gray-500" />
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={pick} disabled={uploading}
+              className="flex-1 bg-gray-100 text-gray-900 text-sm font-bold py-3 rounded-xl active:bg-gray-200 flex items-center justify-center gap-2 disabled:opacity-50">
+              <Upload size={16} />החלפת תמונה
+            </button>
+            <button onClick={() => onChange(null)} disabled={uploading}
+              className="px-4 bg-gray-100 text-gray-600 text-sm font-bold py-3 rounded-xl active:bg-gray-200 disabled:opacity-50 flex items-center gap-1.5">
+              <Trash2 size={15} />הסרה
+            </button>
+          </div>
         </div>
+      ) : (
+        <button onClick={pick} disabled={uploading}
+          className="w-full bg-gray-50 border-2 border-dashed border-gray-300 rounded-2xl p-10 flex flex-col items-center gap-3 active:bg-gray-100 disabled:opacity-60">
+          {uploading ? (
+            <>
+              <Loader2 size={32} className="animate-spin text-gray-400" />
+              <p className="text-gray-400 text-sm">מעלים תמונה...</p>
+            </>
+          ) : (
+            <>
+              <div className="w-14 h-14 rounded-2xl bg-white border border-gray-200 flex items-center justify-center">
+                <Upload size={26} className="text-gray-500" />
+              </div>
+              <p className="text-gray-700 text-sm font-bold">העלאת תמונה מהמכשיר</p>
+              <p className="text-gray-400 text-xs">JPG · PNG · WEBP · עד 8MB</p>
+            </>
+          )}
+        </button>
       )}
+
+      {err && <p className="text-red-600 text-xs mt-3 text-center">{err}</p>}
     </Step>
   );
 }

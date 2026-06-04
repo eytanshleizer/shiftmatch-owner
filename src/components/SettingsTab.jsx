@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Settings, Store, MapPin, Phone, MessageCircle, Image as ImageIcon,
-  Clock, Gift, ListChecks, FileText, Check, Loader2, LogOut, CreditCard, X, Users, HelpCircle
+  Clock, Gift, ListChecks, FileText, Check, Loader2, LogOut, CreditCard, X, Users, HelpCircle, Upload, Trash2
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
 import { can, ROLE_LABEL } from "../lib/permissions";
+import { uploadRestaurantPhoto } from "../lib/uploadPhoto";
 
 const TYPES = [
   "מסעדת שף", "ים-תיכוני", "איטלקי", "אסייתי", "סושי", "מזון מהיר",
@@ -107,6 +108,24 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
   const [saveError, setSaveError] = useState("");
   const [newReq, setNewReq] = useState("");
   const [showTypePicker, setShowTypePicker] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+  const photoInputRef = useRef(null);
+
+  const onPhotoFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploadErr(""); setUploading(true);
+    try {
+      const url = await uploadRestaurantPhoto(file, restaurant?.id || "misc");
+      set({ image_url: url });
+    } catch (ex) {
+      setUploadErr(ex.message || "ההעלאה נכשלה, נסו שוב");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   // Has anything actually changed?  Compares form values to restaurant snapshot.
   const dirty =
@@ -257,9 +276,23 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
               className={inputCls} placeholder="הארבעה 19, תל אביב" />
           </Field>
 
-          <Field label="קישור לתמונת כריכה">
-            <input type="url" dir="ltr" value={form.image_url} onChange={(e) => set({ image_url: e.target.value })}
-              className={`${inputCls} text-left`} placeholder="https://images.unsplash.com/..." />
+          <Field label="תמונת כריכה">
+            <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={onPhotoFile} />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => photoInputRef.current?.click()} disabled={uploading || ro}
+                className="flex-1 bg-gray-100 text-gray-900 text-sm font-bold py-3 rounded-xl active:bg-gray-200 flex items-center justify-center gap-2 disabled:opacity-50">
+                {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                {form.image_url ? "החלפת תמונה" : "העלאת תמונה"}
+              </button>
+              {form.image_url && (
+                <button type="button" onClick={() => set({ image_url: "" })} disabled={uploading || ro}
+                  className="px-4 bg-gray-100 text-gray-600 text-sm font-bold py-3 rounded-xl active:bg-gray-200 disabled:opacity-50 flex items-center gap-1.5">
+                  <Trash2 size={15} />הסרה
+                </button>
+              )}
+            </div>
+            {uploadErr && <p className="text-red-600 text-xs mt-2">{uploadErr}</p>}
+            <p className="text-gray-400 text-[10px] mt-1.5">תמונה אמיתית של המסעדה · JPG · PNG · עד 8MB</p>
           </Field>
         </Section>
 
