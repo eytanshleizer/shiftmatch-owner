@@ -39,15 +39,34 @@ export function getSetupTasks(restaurant) {
   const needSalary = active.filter((name) => !(Number(salaries[name]) > 0));
   const needReqs   = active.filter((name) => countSetReqs(reqs[name] || {}) === 0);
 
+  const hasPositions = types.length > 0;
+
   return {
-    hasPositions:   types.length > 0,
+    hasPositions,
     needSalary,                                  // names missing pay
     needReqs,                                    // names missing requirements
     needsSalary:    needSalary.length > 0,
     needsReqs:      needReqs.length > 0,
-    // Only nudge once positions exist — a brand-new account sees the empty state.
-    needsAttention: types.length > 0 && (needSalary.length > 0 || needReqs.length > 0),
+    // Nudge from the very first step now — guide the owner end-to-end. A brand-new
+    // account with no positions yet is the *first* thing we want to push them to do.
+    needsAttention: !hasPositions || needSalary.length > 0 || needReqs.length > 0,
   };
+}
+
+/**
+ * The current onboarding step for the guided walkthrough — a little "game guide"
+ * that walks the owner through setup in order:
+ *   "add"    – no positions yet → add the positions you're hiring for
+ *   "salary" – positions exist but some open one is missing pay
+ *   "reqs"   – pay is set but some open one is missing worker requirements
+ *   null     – everything's set up, nothing to nudge
+ */
+export function getGuideStep(restaurant) {
+  const t = getSetupTasks(restaurant);
+  if (!t.hasPositions) return "add";
+  if (t.needsSalary)   return "salary";
+  if (t.needsReqs)     return "reqs";
+  return null;
 }
 
 /** Quick boolean for the bottom-nav badge. */

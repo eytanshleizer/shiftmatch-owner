@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Plus, X, Check, Calendar, Moon, Sun, PartyPopper,
-  Loader2, ChevronDown, ChevronUp, Trash2, HelpCircle, AlertCircle
+  Loader2, ChevronDown, ChevronUp, Trash2, HelpCircle, AlertCircle, Sparkles
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { can } from "../lib/permissions";
@@ -248,6 +248,15 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
   const posNeedsSetup = (p) =>
     p.is_open && (!(p.hourly_rate > 0) || countSetReqs(p.requirements || {}) === 0);
 
+  // Current onboarding step — drives the "game guide" pulses. Computed from live
+  // state so it advances the moment the owner adds a position / fills in pay.
+  const guideStep = !loading && canEdit
+    ? (positions.length === 0 ? "add"
+      : needSalary.length > 0 ? "salary"
+      : needReqs.length   > 0 ? "reqs"
+      : null)
+    : null;
+
   return (
     <div className="bg-gray-50 min-h-full pb-24 text-gray-900" dir="rtl">
 
@@ -267,6 +276,28 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
         {!canEdit && (
           <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded-2xl px-4 py-3">
             🔒 התפקיד שלך אינו מאפשר עריכת משרות — צפייה בלבד.
+          </div>
+        )}
+
+        {/* ── Step 1 of the guide: welcome the owner & point them to "+ הוספת משרה". ── */}
+        {guideStep === "add" && (
+          <div className="bg-gray-900 text-white rounded-2xl p-4">
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                <Sparkles size={16} className="text-amber-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm">👋 בואו נתחיל</p>
+                <p className="text-gray-300 text-xs mt-0.5 leading-relaxed">
+                  הוסיפו את המשרות שאתם מגייסים. אחר כך נגדיר יחד שכר ודרישות לכל משרה —
+                  כך מלצרים יראו בדיוק מה אתם מציעים.
+                </p>
+                <button onClick={() => setShowAdd(true)}
+                  className="mt-3 bg-white text-gray-900 text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 active:bg-gray-100">
+                  <Plus size={14} />הוספת משרה ראשונה
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -331,8 +362,14 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
             <p className="text-gray-500 text-xs font-bold uppercase tracking-wide">משרות</p>
             {canEdit && (
               <button onClick={() => setShowAdd(true)}
-                className="text-gray-900 text-xs font-bold flex items-center gap-1">
+                className="relative text-gray-900 text-xs font-bold flex items-center gap-1">
                 <Plus size={13} />הוספת משרה
+                {guideStep === "add" && (
+                  <span className="absolute -top-1.5 -left-1.5 flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+                  </span>
+                )}
               </button>
             )}
           </div>
@@ -345,7 +382,17 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
             <SectionCard center>
               <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center text-3xl mx-auto mb-3">💼</div>
               <p className="text-gray-900 font-bold text-sm">אין משרות עדיין</p>
-              <p className="text-gray-500 text-xs mt-1">לחצ/י "+ הוספת משרה" כדי להתחיל</p>
+              <p className="text-gray-500 text-xs mt-1">הוסיפו את המשרות שאתם מגייסים כדי להתחיל</p>
+              {canEdit && (
+                <button onClick={() => setShowAdd(true)}
+                  className="relative mt-4 mx-auto bg-gray-900 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-1.5 active:bg-gray-800">
+                  <Plus size={14} />הוספת משרה
+                  <span className="absolute -top-1.5 -left-1.5 flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500 ring-2 ring-white" />
+                  </span>
+                </button>
+              )}
             </SectionCard>
           ) : (
             <div className="space-y-2">
@@ -369,7 +416,10 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                           {emoji}
                         </div>
                         {posNeedsSetup(p) && (
-                          <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full ring-2 ring-white" />
+                          <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                            <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+                            <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500 ring-2 ring-white" />
+                          </span>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">

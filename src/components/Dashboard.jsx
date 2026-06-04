@@ -1,10 +1,10 @@
 import { useState } from "react";
 import {
-  Home, Briefcase, Users, Settings as SettingsIcon, Calendar, LogOut
+  Home, Briefcase, Users, Settings as SettingsIcon, Calendar, LogOut, Sparkles, ChevronLeft, X
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { ROLE_LABEL } from "../lib/permissions";
-import { needsSetup } from "../lib/setup";
+import { needsSetup, getGuideStep } from "../lib/setup";
 import HomeTab         from "./HomeTab";
 import JobsTab         from "./JobsTab";
 import CalendarTab     from "./CalendarTab";
@@ -27,6 +27,7 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
   const [plansOpen, setPlansOpen]               = useState(false);
   const [teamOpen,  setTeamOpen]                = useState(false);
   const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
+  const [coachDismissed, setCoachDismissed]       = useState(false);
 
   // User pill bits
   const fullName  = (user?.user_metadata?.name || user?.email || "").trim();
@@ -38,9 +39,19 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
     else setTab(id);
   };
 
-  // Nudge owners who finished signup but haven't set pay / requirements per
-  // position — shows a red dot on the משרות tab until it's filled in.
+  // Nudge owners through the whole setup — shows a pulsing red dot on the משרות
+  // tab and a coach bubble until every open position has pay + requirements.
   const jobsNeedSetup = needsSetup(restaurant);
+  const guideStep     = getGuideStep(restaurant);   // "add" | "salary" | "reqs" | null
+
+  // The coach bubble points owners to the משרות tab whenever they're elsewhere
+  // and there's still setup to finish (and they haven't dismissed it this session).
+  const showCoach = guideStep && tab !== "jobs" && !coachDismissed;
+  const coachText = {
+    add:    "בואו נתחיל! הוסיפו את המשרות שאתם מגייסים",
+    salary: "כמעט שם — הגדירו שכר לשעה למשרות שלכם",
+    reqs:   "שלב אחרון — הגדירו את דרישות העובד למשרות",
+  }[guideStep];
 
   return (
     <div className="h-full w-full flex justify-center bg-gray-200">
@@ -95,6 +106,29 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
         </div>
       )}
 
+      {/* Guide coach bubble — floats above the bottom nav, points to משרות */}
+      {showCoach && (
+        <div className="absolute inset-x-3 z-40"
+          style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 74px)" }}>
+          <div className="bg-gray-900 text-white rounded-2xl shadow-xl shadow-gray-900/20 p-3 flex items-center gap-2.5 animate-[fadeIn_0.3s_ease]">
+            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+              <Sparkles size={15} className="text-amber-300" />
+            </div>
+            <button onClick={() => setTab("jobs")}
+              className="flex-1 min-w-0 text-right active:opacity-80">
+              <p className="text-white text-xs font-bold leading-snug">{coachText}</p>
+              <span className="text-gray-300 text-[11px] font-semibold flex items-center gap-0.5 mt-0.5">
+                עברו ללשונית משרות <ChevronLeft size={12} />
+              </span>
+            </button>
+            <button onClick={() => setCoachDismissed(true)}
+              className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-gray-300 active:bg-white/20 flex-shrink-0">
+              <X size={13} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bottom nav — white, clean */}
       <div className="flex-shrink-0">
         <div className="safe-bottom"
@@ -119,7 +153,10 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
                       strokeWidth={active ? 2.2 : 1.5}
                       className={active ? "text-gray-900" : "text-gray-400"} />
                     {id === "jobs" && jobsNeedSetup && (
-                      <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white" />
+                      <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+                      </span>
                     )}
                   </div>
                   <span className={`text-[10px] font-semibold transition-colors duration-200 ${active ? "text-gray-900" : "text-gray-400"}`}>
