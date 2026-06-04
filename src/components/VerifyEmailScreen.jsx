@@ -49,8 +49,8 @@ export default function VerifyEmailScreen({ user, onConfirmed, onSignOut }) {
 
       <h1 className="text-3xl font-black text-gray-900 leading-tight">הזן/י את הקוד</h1>
       <p className="text-gray-500 text-sm mt-3 leading-relaxed max-w-xs">
-        שלחנו קוד בן 6 ספרות ל-<b className="text-gray-900" dir="ltr">{email}</b>.
-        הזן/י אותו כאן כדי לאמת את החשבון.
+        שלחנו קוד ל-<b className="text-gray-900" dir="ltr">{email}</b>.
+        העתק/י אותו מהמייל והזן/י כאן כדי לאמת את החשבון.
       </p>
 
       {/* Code input */}
