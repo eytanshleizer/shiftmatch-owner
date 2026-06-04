@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Home, Briefcase, Users, Settings as SettingsIcon, Calendar, LogOut, Sparkles, ChevronLeft, X
 } from "lucide-react";
@@ -28,6 +28,22 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
   const [teamOpen,  setTeamOpen]                = useState(false);
   const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
   const [coachDismissed, setCoachDismissed]       = useState(false);
+
+  // Discovery nudge for the הגדרות tab — a soft red dot that just says "there's
+  // stuff worth a look in here" (atmosphere, perks, ranking preferences…). Unlike
+  // the משרות setup nudge, these are optional: the dot clears as soon as the owner
+  // opens Settings once, whether or not they fill anything in. Persisted per
+  // restaurant so it doesn't reappear on reload.
+  const settingsSeenKey = `settingsSeen_${restaurant?.id || "anon"}`;
+  const [settingsSeen, setSettingsSeen] = useState(() => {
+    try { return localStorage.getItem(settingsSeenKey) === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    if (tab === "settings" && !settingsSeen) {
+      setSettingsSeen(true);
+      try { localStorage.setItem(settingsSeenKey, "1"); } catch {}
+    }
+  }, [tab, settingsSeen, settingsSeenKey]);
 
   // User pill bits
   const fullName  = (user?.user_metadata?.name || user?.email || "").trim();
@@ -153,6 +169,12 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
                       strokeWidth={active ? 2.2 : 1.5}
                       className={active ? "text-gray-900" : "text-gray-400"} />
                     {id === "jobs" && jobsNeedSetup && (
+                      <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 attn-ring" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+                      </span>
+                    )}
+                    {id === "settings" && !settingsSeen && (
                       <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
                         <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 attn-ring" />
                         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
