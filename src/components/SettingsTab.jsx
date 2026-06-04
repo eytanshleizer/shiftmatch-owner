@@ -175,33 +175,40 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
     }
     setSaving(true); setSaveError("");
 
-    // Geocode the address to exact coords whenever it changed (or coords are
-    // missing) so waiters can see precise km distance to this restaurant.
-    const payload = { ...form };
-    const addressChanged = form.address && form.address !== (restaurant?.address || "");
-    const missingCoords  = form.address && (restaurant?.lat == null || restaurant?.lng == null);
-    if (addressChanged || missingCoords) {
-      try {
-        const geo = await geocodeAddress(form.address);
-        if (geo) { payload.lat = geo.lat; payload.lng = geo.lng; }
-      } catch { /* non-fatal — save the rest anyway */ }
-    }
+    try {
+      // Geocode the address to exact coords whenever it changed (or coords are
+      // missing) so waiters can see precise km distance to this restaurant.
+      // geocodeAddress is hard-capped with a timeout so it can't hang the save.
+      const payload = { ...form };
+      const addressChanged = form.address && form.address !== (restaurant?.address || "");
+      const missingCoords  = form.address && (restaurant?.lat == null || restaurant?.lng == null);
+      if (addressChanged || missingCoords) {
+        try {
+          const geo = await geocodeAddress(form.address);
+          if (geo) { payload.lat = geo.lat; payload.lng = geo.lng; }
+        } catch { /* non-fatal — save the rest anyway */ }
+      }
 
-    const { data, error } = await supabase
-      .from("restaurants")
-      .update(payload)
-      .eq("id", restaurant.id)
-      .select()
-      .single();
-    setSaving(false);
-    if (!error && data) {
-      onUpdate?.(data);
-      setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 1800);
-    } else if (error) {
-      // Show inline error instead of native alert (works better on mobile)
-      setSaveError(error.message || "שגיאה בשמירה — נסה/י שוב");
+      const { data, error } = await supabase
+        .from("restaurants")
+        .update(payload)
+        .eq("id", restaurant.id)
+        .select()
+        .single();
+      if (!error && data) {
+        onUpdate?.(data);
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 1800);
+      } else if (error) {
+        // Show inline error instead of native alert (works better on mobile)
+        setSaveError(error.message || "שגיאה בשמירה — נסה/י שוב");
+        setTimeout(() => setSaveError(""), 5000);
+      }
+    } catch (ex) {
+      setSaveError(ex?.message || "שגיאה בשמירה — נסה/י שוב");
       setTimeout(() => setSaveError(""), 5000);
+    } finally {
+      setSaving(false);   // always release the button, even on a thrown error
     }
   };
 

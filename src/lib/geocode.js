@@ -74,15 +74,26 @@ async function osmGeocode(address) {
   };
 }
 
+// Resolve to `fallback` if `p` doesn't settle within `ms` — so a hung SDK load
+// or a slow/blocked geocoding request can never freeze the caller (e.g. the
+// Settings "save" button spinning forever).
+function withTimeout(p, ms, fallback = null) {
+  return Promise.race([
+    p,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 // Returns { lat, lng, city, formatted, source } or null.
+// Hard-capped so it never blocks a save: at most ~5s on Google, ~5s on OSM.
 export async function geocodeAddress(address) {
   if (!address || !String(address).trim()) return null;
   const q = `${String(address).trim()}, ישראל`;
   if (GOOGLE_KEY) {
     try {
-      const g = await googleGeocode(q);
+      const g = await withTimeout(googleGeocode(q), 5000);
       if (g) return g;
     } catch { /* fall back to OSM below */ }
   }
-  try { return await osmGeocode(address); } catch { return null; }
+  try { return await withTimeout(osmGeocode(address), 5000); } catch { return null; }
 }
