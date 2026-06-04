@@ -204,7 +204,14 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
     if (expandedPos === p.id) setExpandedPos(null);
   };
 
-  const addFromTemplate = (tmpl) => mutate(async () => {
+  // Insert one template-backed position + copy its default screening questions.
+  // Guards against duplicates by template_id and by name so a stray double-tap
+  // can never create two identical rows.
+  const insertTemplate = async (tmpl, existingNames, existingTemplateIds) => {
+    if (existingTemplateIds.has(tmpl.id) || existingNames.has(tmpl.name)) return null;
+    existingTemplateIds.add(tmpl.id);
+    existingNames.add(tmpl.name);
+
     const { data: inserted } = await supabase
       .from("restaurant_positions")
       .insert({
@@ -237,12 +244,30 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
         }))
       );
     }
-    if (inserted) setExpandedPos(inserted.id);
-  }).then(() => setShowAdd(false));
+    return inserted;
+  };
+
+  // Add several catalog positions at once (multi-select in the modal).
+  const addTemplates = (tmpls) => {
+    if (!tmpls.length) { setShowAdd(false); return; }
+    const existingNames       = new Set(positionsRef.current.map((p) => p.name));
+    const existingTemplateIds = new Set(positionsRef.current.map((p) => p.template_id).filter(Boolean));
+    let lastId = null;
+    mutate(async () => {
+      for (const tmpl of tmpls) {
+        const inserted = await insertTemplate(tmpl, existingNames, existingTemplateIds);
+        if (inserted) lastId = inserted.id;
+      }
+    }).then(() => { if (lastId) setExpandedPos(lastId); setShowAdd(false); });
+  };
 
   const addCustomPosition = (name) => {
     const n = name.trim();
     if (!n) return;
+    if (positionsRef.current.some((p) => p.name === n)) {
+      alert(`כבר קיימת משרה בשם "${n}".`);
+      return;
+    }
     mutate(async () => {
       const { data: inserted } = await supabase
         .from("restaurant_positions")
@@ -502,6 +527,13 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                         className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 active:bg-gray-200 flex-shrink-0">
                         {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </button>
+                      {canEdit && (
+                        <button onClick={() => removePosition(p)}
+                          title="מחיקת המשרה"
+                          className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center text-red-500 active:bg-red-100 flex-shrink-0">
+                          <Trash2 size={15} />
+                        </button>
+                      )}
                     </div>
 
                     {/* ── Expanded details ── */}
@@ -688,7 +720,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
         <AddPositionModal
           templates={availableTemplates}
           onClose={() => setShowAdd(false)}
-          onPickTemplate={addFromTemplate}
+          onAddTemplates={addTemplates}
           onAddCustom={addCustomPosition} />
       )}
     </div>
@@ -696,53 +728,85 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
 }
 
 // ── Add position modal ──────────────────────────────────────────────────────
-function AddPositionModal({ templates, onClose, onPickTemplate, onAddCustom }) {
+// Multi-select: tap as many catalog roles as you want (they highlight with a
+// checkmark), then press the "הוספה" button at the bottom to add them all at
+// once. Custom positions can be added alongside via the text field.
+function AddPositionModal({ templates, onClose, onAddTemplates, onAddCustom }) {
   const [customName, setCustomName] = useState("");
+  const [selected, setSelected]     = useState([]); // array of template ids
+
+  const toggle = (id) =>
+    setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+
+  const commit = () => {
+    const picked = templates.filter((t) => selected.includes(t.id));
+    onAddTemplates(picked);
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end"
       onClick={onClose}>
-      <div className="bg-white w-full max-w-md mx-auto rounded-t-3xl p-6 pb-8 max-h-[80vh] overflow-y-auto"
+      <div className="bg-white w-full max-w-md mx-auto rounded-t-3xl p-6 pb-6 max-h-[82vh] overflow-y-auto flex flex-col"
         onClick={(e) => e.stopPropagation()} dir="rtl">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-1">
           <h3 className="text-gray-900 font-black text-lg">הוספת משרה</h3>
           <button onClick={onClose}
             className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
             <X size={16} />
           </button>
         </div>
+        <p className="text-gray-500 text-xs mb-4">בחר/י משרה אחת או יותר ואז לחצ/י "הוספה".</p>
 
-        {/* Catalog positions */}
+        {/* Catalog positions — multi-select */}
         {templates.length > 0 && (
           <>
             <p className="text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-2">תפקידים נפוצים</p>
             <div className="grid grid-cols-2 gap-2 mb-5">
-              {templates.map((t) => (
-                <button key={t.id} onClick={() => onPickTemplate(t)}
-                  className="bg-white border border-gray-200 rounded-2xl p-4 text-center active:bg-gray-50 shadow-sm">
-                  <div className="text-3xl mb-1">{t.icon || "💼"}</div>
-                  <p className="text-gray-900 text-sm font-bold">{t.name}</p>
-                </button>
-              ))}
+              {templates.map((t) => {
+                const on = selected.includes(t.id);
+                return (
+                  <button key={t.id} onClick={() => toggle(t.id)}
+                    className={`relative rounded-2xl p-4 text-center shadow-sm border-2 transition-colors ${
+                      on ? "bg-gray-900 border-gray-900" : "bg-white border-gray-200 active:bg-gray-50"
+                    }`}>
+                    {on && (
+                      <span className="absolute top-2 left-2 w-5 h-5 rounded-full bg-white flex items-center justify-center">
+                        <Check size={13} className="text-gray-900" />
+                      </span>
+                    )}
+                    <div className="text-3xl mb-1">{t.icon || "💼"}</div>
+                    <p className={`text-sm font-bold ${on ? "text-white" : "text-gray-900"}`}>{t.name}</p>
+                  </button>
+                );
+              })}
             </div>
           </>
         )}
 
         {/* Custom position */}
         <p className="text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-2">משרה מותאמת</p>
-        <div className="flex gap-2">
+        <div className="flex gap-2 mb-4">
           <input
             type="text" value={customName}
             onChange={(e) => setCustomName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") onAddCustom(customName); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { onAddCustom(customName); setCustomName(""); } }}
             placeholder="שם המשרה"
             className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900" />
-          <button onClick={() => onAddCustom(customName)}
+          <button onClick={() => { onAddCustom(customName); setCustomName(""); }}
             disabled={!customName.trim()}
-            className="bg-gray-900 text-white px-4 py-2.5 rounded-xl text-sm font-bold active:bg-gray-800 disabled:opacity-30 flex items-center gap-1">
+            className="bg-gray-100 text-gray-900 px-4 py-2.5 rounded-xl text-sm font-bold active:bg-gray-200 disabled:opacity-30 flex items-center gap-1">
             <Plus size={14} />הוספה
           </button>
         </div>
+
+        {/* Commit selected catalog roles */}
+        <button onClick={commit} disabled={selected.length === 0}
+          className="w-full bg-gray-900 text-white font-bold py-3.5 rounded-full text-sm active:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 flex items-center justify-center gap-2 mt-1">
+          <Check size={16} />
+          {selected.length === 0 ? "בחר/י משרות להוספה"
+            : selected.length === 1 ? "הוספת משרה אחת"
+            : `הוספת ${selected.length} משרות`}
+        </button>
       </div>
     </div>
   );
