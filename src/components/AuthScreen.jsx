@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { Loader2, ChevronLeft, Eye, EyeOff, AlertTriangle, Check } from "lucide-react";
 import { logEvent } from "../lib/tracking";
@@ -44,21 +44,11 @@ export default function AuthScreen() {
   const [pendingConfirmation, setPendingConfirmation] = useState(null); // { email } or null
   const [resending, setResending]   = useState(false);
   const [resentAt,  setResentAt]    = useState(null);
-  const [checking,  setChecking]    = useState(false);
 
-  // Auto-poll while confirmation is pending — same mechanic as VerifyEmailScreen
-  useEffect(() => {
-    if (!pendingConfirmation) return;
-    const interval = setInterval(async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user?.email_confirmed_at) {
-        // Email confirmed — force a fresh session load so App.jsx takes over
-        await supabase.auth.refreshSession();
-        window.location.reload();
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [pendingConfirmation]);
+  // 6-digit confirmation code (OTP) the user types from the email.
+  const [code, setCode]         = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [codeError, setCodeError] = useState("");
 
   const submit = async () => {
     setError(""); setLoading(true);
@@ -174,47 +164,70 @@ export default function AuthScreen() {
     setTimeout(() => setResentAt(null), 10000);
   };
 
-  const checkNow = async () => {
-    setChecking(true);
-    const { data } = await supabase.auth.getUser();
-    setChecking(false);
-    if (data?.user?.email_confirmed_at) {
+  // Verify the 6-digit code the user typed from the confirmation email.
+  // On success Supabase returns a session → reload so App.jsx takes over.
+  const verifyCode = async () => {
+    if (!pendingConfirmation?.email) return;
+    const token = code.replace(/\D/g, "").trim();
+    if (token.length !== 6) { setCodeError("הקוד הוא 6 ספרות"); return; }
+    setCodeError(""); setVerifying(true);
+    try {
+      const { data, error: e } = await supabase.auth.verifyOtp({
+        email: pendingConfirmation.email,
+        token,
+        type: "signup",
+      });
+      if (e) throw e;
+      if (data?.user?.id) {
+        logEvent("restaurant", "email_verified", { user_id: data.user.id, email: pendingConfirmation.email });
+      }
       await supabase.auth.refreshSession();
       window.location.reload();
+    } catch {
+      setCodeError("הקוד שגוי או שפג תוקפו — נסה/י שוב");
+    } finally {
+      setVerifying(false);
     }
   };
 
-  // ── Post-signup / post-login: email confirmation pending ──────────
+  // ── Post-signup / post-login: enter the email confirmation code ──────
   if (pendingConfirmation) {
     return (
       <Frame>
         <div className="flex-1 flex flex-col items-center justify-center px-6 text-center safe-top">
           <div className="w-20 h-20 rounded-3xl bg-blue-50 border border-blue-100 flex items-center justify-center mb-6">
-            <span className="text-3xl">📬</span>
+            <span className="text-3xl">🔑</span>
           </div>
-          <h1 className="text-2xl font-black text-gray-900 leading-tight">בדוק/בדקי את האמייל</h1>
+          <h1 className="text-2xl font-black text-gray-900 leading-tight">הזן/י את הקוד</h1>
           <p className="text-gray-500 text-sm mt-3 leading-relaxed max-w-xs">
-            שלחנו אימייל ל-<b className="text-gray-900" dir="ltr">{pendingConfirmation.email}</b> עם
-            קישור לאישור החשבון. לחצ/י עליו כדי להמשיך.
+            שלחנו קוד בן 6 ספרות ל-<b className="text-gray-900" dir="ltr">{pendingConfirmation.email}</b>.
+            הזן/י אותו כאן כדי לאמת את החשבון.
           </p>
 
-          {/* Polling indicator */}
-          <div className="mt-5 bg-gray-50 border border-gray-200 rounded-full px-3.5 py-1.5 flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-70" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-            </span>
-            <span className="text-gray-700 text-[11px] font-bold">בודק כל 5 שניות</span>
-          </div>
+          {/* Code input */}
+          <input
+            value={code}
+            onChange={(e) => { setCode(e.target.value.replace(/\D/g, "").slice(0, 6)); setCodeError(""); }}
+            onKeyDown={(e) => e.key === "Enter" && verifyCode()}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="••••••"
+            dir="ltr"
+            className="mt-7 w-56 text-center tracking-[0.5em] text-3xl font-black bg-gray-50 border-2 border-gray-200 rounded-2xl py-4 text-gray-900 placeholder-gray-300 outline-none focus:bg-white focus:border-gray-900 transition-colors"
+          />
+
+          {codeError && (
+            <p className="text-red-600 text-sm font-semibold mt-3">{codeError}</p>
+          )}
 
           <p className="text-gray-400 text-[11px] mt-4 leading-relaxed max-w-xs">
             לא רואה את האימייל? בדוק/בדקי גם בתיקיית הספאם.
           </p>
         </div>
         <div className="px-6 pb-8 safe-bottom space-y-2">
-          {/* Manual check */}
-          <PrimaryButton onClick={checkNow} loading={checking}>
-            {checking ? "בודק..." : "בדוק עכשיו"}
+          {/* Verify */}
+          <PrimaryButton onClick={verifyCode} disabled={verifying || code.length !== 6} loading={verifying}>
+            {verifying ? "מאמת..." : "אימות"}
           </PrimaryButton>
 
           {/* Resend */}
@@ -225,13 +238,13 @@ export default function AuthScreen() {
             {resending
               ? <><Loader2 size={14} className="animate-spin" />שולח...</>
               : resentAt
-                ? <><Check size={14} className="text-green-600" />אימייל נשלח שוב</>
-                : "שלח/י לי שוב את האימייל"}
+                ? <><Check size={14} className="text-green-600" />קוד חדש נשלח</>
+                : "שלח/י לי קוד חדש"}
           </button>
 
-          <button onClick={() => { setPendingConfirmation(null); setMode("login"); }}
+          <button onClick={() => { setPendingConfirmation(null); setCode(""); setCodeError(""); setMode("login"); }}
             className="w-full text-gray-500 text-sm font-semibold py-2">
-            כבר אישרת? <span className="text-gray-900 underline">היכנס/י</span>
+            חזרה ל<span className="text-gray-900 underline">כניסה</span>
           </button>
         </div>
       </Frame>
