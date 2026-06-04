@@ -366,7 +366,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                 <Plus size={13} />הוספת משרה
                 {guideStep === "add" && (
                   <span className="absolute -top-1.5 -left-1.5 flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 attn-ring" />
                     <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
                   </span>
                 )}
@@ -388,7 +388,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                   className="relative mt-4 mx-auto bg-gray-900 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-1.5 active:bg-gray-800">
                   <Plus size={14} />הוספת משרה
                   <span className="absolute -top-1.5 -left-1.5 flex h-3 w-3">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 attn-ring" />
                     <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500 ring-2 ring-white" />
                   </span>
                 </button>
@@ -417,7 +417,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                         </div>
                         {posNeedsSetup(p) && (
                           <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                            <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+                            <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 attn-ring" />
                             <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500 ring-2 ring-white" />
                           </span>
                         )}

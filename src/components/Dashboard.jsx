@@ -108,9 +108,9 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
 
       {/* Guide coach bubble — floats above the bottom nav, points to משרות */}
       {showCoach && (
-        <div className="absolute inset-x-3 z-40"
-          style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 74px)" }}>
-          <div className="bg-gray-900 text-white rounded-2xl shadow-xl shadow-gray-900/20 p-3 flex items-center gap-2.5 animate-[fadeIn_0.3s_ease]">
+        <div className="absolute inset-x-3 z-40 guide-coach"
+          style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
+          <div className="bg-gray-900 text-white rounded-2xl shadow-xl shadow-gray-900/25 p-3 flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
               <Sparkles size={15} className="text-amber-300" />
             </div>
@@ -154,7 +154,7 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
                       className={active ? "text-gray-900" : "text-gray-400"} />
                     {id === "jobs" && jobsNeedSetup && (
                       <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
-                        <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 attn-ring" />
                         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
                       </span>
                     )}
