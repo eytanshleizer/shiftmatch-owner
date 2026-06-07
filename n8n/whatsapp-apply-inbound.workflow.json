@@ -185,7 +185,7 @@
         "bodyParameters": {
           "parameters": [
             { "name": "To", "value": "={{ $json.to }}" },
-            { "name": "From", "value": "whatsapp:+14155238886" },
+            { "name": "From", "value": "whatsapp:+19383001853" },
             { "name": "Body", "value": "={{ $json.body }}" }
           ]
         },
