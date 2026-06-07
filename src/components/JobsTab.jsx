@@ -749,6 +749,23 @@ function AddPositionModal({ templates, onClose, onAddTemplates, onAddCustom }) {
   const [customName, setCustomName] = useState("");
   const [selected, setSelected]     = useState([]); // array of template ids
   const [submitting, setSubmitting] = useState(false);
+  const scrollBodyRef = useRef(null);
+
+  // ── Scroll lock ──
+  // While the sheet is open, any touch-drag outside its scrollable body must NOT
+  // bleed through and scroll the page (the jobs list / bottom nav) underneath.
+  // We block touchmove everywhere except inside the sheet's own scroll area, and
+  // pair it with `overscroll-contain` so scrolling the list to its edge doesn't
+  // chain to the page behind it either.
+  useEffect(() => {
+    const onTouchMove = (e) => {
+      const el = scrollBodyRef.current;
+      if (el && el.contains(e.target)) return; // allow scrolling inside the sheet
+      e.preventDefault();                       // block background scroll
+    };
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => document.removeEventListener("touchmove", onTouchMove);
+  }, []);
 
   const toggle = (id) =>
     setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
@@ -778,7 +795,7 @@ function AddPositionModal({ templates, onClose, onAddTemplates, onAddCustom }) {
         </div>
 
         {/* Scrollable body */}
-        <div className="px-6 flex-1 min-h-0 overflow-y-auto">
+        <div ref={scrollBodyRef} className="px-6 flex-1 min-h-0 overflow-y-auto overscroll-contain">
           {/* Catalog positions — multi-select */}
           {templates.length > 0 && (
             <>
