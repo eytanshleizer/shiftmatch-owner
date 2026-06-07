@@ -749,22 +749,16 @@ function AddPositionModal({ templates, onClose, onAddTemplates, onAddCustom }) {
   const [customName, setCustomName] = useState("");
   const [selected, setSelected]     = useState([]); // array of template ids
   const [submitting, setSubmitting] = useState(false);
-  const scrollBodyRef = useRef(null);
-
-  // ── Scroll lock ──
-  // While the sheet is open, any touch-drag outside its scrollable body must NOT
-  // bleed through and scroll the page (the jobs list / bottom nav) underneath.
-  // We block touchmove everywhere except inside the sheet's own scroll area, and
-  // pair it with `overscroll-contain` so scrolling the list to its edge doesn't
-  // chain to the page behind it either.
+  // ── Background scroll lock ──
+  // The modal is full-screen, so it covers the page entirely — the jobs list and
+  // bottom nav behind it can never receive touches or move. We also freeze the
+  // document so iOS can't rubber-band the page underneath. Scrolling happens only
+  // inside the modal's own body (smooth, native, `overscroll-contain`).
   useEffect(() => {
-    const onTouchMove = (e) => {
-      const el = scrollBodyRef.current;
-      if (el && el.contains(e.target)) return; // allow scrolling inside the sheet
-      e.preventDefault();                       // block background scroll
-    };
-    document.addEventListener("touchmove", onTouchMove, { passive: false });
-    return () => document.removeEventListener("touchmove", onTouchMove);
+    const { body } = document;
+    const prevOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+    return () => { body.style.overflow = prevOverflow; };
   }, []);
 
   const toggle = (id) =>
@@ -778,24 +772,28 @@ function AddPositionModal({ templates, onClose, onAddTemplates, onAddCustom }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-end"
-      onClick={onClose}>
-      <div className="bg-white w-full max-w-md mx-auto rounded-t-3xl max-h-[85vh] flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()} dir="rtl">
+    // Full-screen on mobile (covers the page entirely → only this UI moves);
+    // a centered card with a dim backdrop on desktop.
+    <div className="fixed inset-0 z-[60] flex flex-col bg-white sm:items-center sm:justify-center sm:bg-black/40 sm:backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }} dir="rtl">
+      <div className="bg-white flex flex-col w-full flex-1 min-h-0 overflow-hidden sm:flex-none sm:max-w-md sm:h-[85vh] sm:rounded-3xl sm:shadow-2xl"
+        onClick={(e) => e.stopPropagation()}>
         {/* Header — fixed, never scrolls */}
-        <div className="px-6 pt-6 pb-3 flex-shrink-0">
+        <div className="px-6 pb-3 flex-shrink-0 border-b border-gray-100 touch-none"
+          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 18px)" }}>
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-gray-900 font-black text-lg">הוספת משרה</h3>
+            <h3 className="text-gray-900 font-black text-xl">הוספת משרה</h3>
             <button onClick={onClose}
-              className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
-              <X size={16} />
+              className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 active:bg-gray-200">
+              <X size={18} />
             </button>
           </div>
           <p className="text-gray-500 text-xs">בחר/י משרה אחת או יותר ואז לחצ/י "הוספה".</p>
         </div>
 
-        {/* Scrollable body */}
-        <div ref={scrollBodyRef} className="px-6 flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        {/* Scrollable body — the only part that scrolls */}
+        <div className="px-6 pt-4 flex-1 min-h-0 overflow-y-auto overscroll-contain"
+          style={{ WebkitOverflowScrolling: "touch" }}>
           {/* Catalog positions — multi-select */}
           {templates.length > 0 && (
             <>
@@ -839,9 +837,9 @@ function AddPositionModal({ templates, onClose, onAddTemplates, onAddCustom }) {
           </div>
         </div>
 
-        {/* Pinned footer — always visible, clears the bottom nav + home indicator */}
-        <div className="flex-shrink-0 px-6 pt-3 border-t border-gray-100"
-          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
+        {/* Pinned footer — always visible, clears the home indicator */}
+        <div className="flex-shrink-0 px-6 pt-3 border-t border-gray-100 bg-white touch-none"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}>
           {/* Commit selected catalog roles */}
           <button onClick={commit} disabled={selected.length === 0 || submitting}
             className="w-full bg-gray-900 text-white font-bold py-3.5 rounded-full text-sm active:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 flex items-center justify-center gap-2">
