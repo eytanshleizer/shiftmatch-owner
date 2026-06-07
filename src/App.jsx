@@ -37,6 +37,7 @@ export default function App() {
   const [invitation, setInvitation] = useState(null);
   const [loading, setLoading]       = useState(true);
   const [profileRole, setProfileRole] = useState(null);
+  const [waiterForwardUrl, setWaiterForwardUrl] = useState(null);
 
   // Wizard open/closed state — independent from "do I have a restaurant".
   // Persisted in sessionStorage so a page refresh while filling out the
@@ -52,7 +53,7 @@ export default function App() {
   }, [wizardOpen]);
 
   const resetState = () => {
-    setRestaurant(null); setMembership(null); setInvitation(null); setWizardOpen(false); setProfileRole(null);
+    setRestaurant(null); setMembership(null); setInvitation(null); setWizardOpen(false); setProfileRole(null); setWaiterForwardUrl(null);
   };
 
   const signOut = async () => {
@@ -64,14 +65,53 @@ export default function App() {
     setLoading(true);
     resetState();
 
-    // Check if this user is actually a waiter — if so, we must not let them
-    // through the restaurant setup flow.
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("role")
+    // Identity now lives in restaurant_owners (separate from waiter profiles).
+    // This is a restaurant account if a restaurant_owners row exists for them.
+    const { data: owner } = await supabase
+      .from("restaurant_owners")
+      .select("id")
       .eq("id", uid)
       .maybeSingle();
-    if (prof?.role) setProfileRole(prof.role);
+
+    // No owner row → they might be a waiter who landed on the restaurant app as
+    // a FALLBACK. Once the waiter app URL is in Supabase's Redirect URLs
+    // allowlist, confirmation links go straight to the waiter app and this
+    // branch is never hit. But if a link still resolves here, we DON'T silently
+    // redirect — we show a clear "email confirmed" screen with a button that
+    // carries the live session to the waiter app in the URL hash (the same
+    // format Supabase uses) so they arrive already logged-in.
+    let waiterProf = null;
+    if (!owner) {
+      const { data: wp } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", uid)
+        .maybeSingle();
+      waiterProf = wp;
+    }
+
+    if (!owner && waiterProf) {
+      const waiterBase = "https://shiftmatch-waiter.vercel.app";
+      const { data: sd } = await supabase.auth.getSession();
+      const s = sd?.session;
+      if (s?.access_token && s?.refresh_token) {
+        const hash = new URLSearchParams({
+          access_token:  s.access_token,
+          refresh_token: s.refresh_token,
+          expires_in:    String(s.expires_in ?? 3600),
+          token_type:    "bearer",
+          type:          "signup",
+        }).toString();
+        setWaiterForwardUrl(`${waiterBase}/#${hash}`);
+      } else {
+        setWaiterForwardUrl(waiterBase);
+      }
+      setProfileRole("waitress");
+      setLoading(false);
+      return;
+    }
+
+    setProfileRole("restaurant");
 
     const { data: memberships } = await supabase
       .from("restaurant_members")
@@ -144,20 +184,26 @@ export default function App() {
 
   if (!session) return <AuthScreen />;
 
-  // Wrong app — this is a waiter account. Don't show restaurant setup.
+  // Waiter account landed on the restaurant app (fallback — see loadContext).
+  // The email is already confirmed at this point, so we celebrate it and send
+  // them to the waiter app carrying their live session, where they continue.
   if (profileRole === "waitress") {
     return (
-      <div className="h-full bg-white flex flex-col items-center justify-center px-6 text-center" dir="rtl">
-        <div className="text-5xl mb-4">🧑‍🍳</div>
-        <h1 className="text-2xl font-black text-gray-900 mb-2">זה האפליקציה למסעדות</h1>
+      <div className="h-full bg-gradient-to-b from-green-50 to-white flex flex-col items-center justify-center px-6 text-center" dir="rtl">
+        <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center mb-6">
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </div>
+        <h1 className="text-3xl font-black text-gray-900 mb-2">האימייל אושר! ✓</h1>
         <p className="text-gray-500 text-sm mb-8 max-w-xs leading-relaxed">
-          החשבון שלך הוא חשבון מלצר/ית. השתמש/י באפליקציית ShiftMatch למחפשי עבודה.
+          החשבון שלך מאומת. המשך/המשיכי לאפליקציית ShiftMatch למחפשי עבודה — את/ה כבר מחובר/ת.
         </p>
         <a
-          href="https://shiftmatch-waiter.vercel.app"
+          href={waiterForwardUrl || "https://shiftmatch-waiter.vercel.app"}
           className="w-full max-w-xs bg-brand-500 text-white font-bold py-4 rounded-2xl text-base flex items-center justify-center gap-2 shadow-lg"
         >
-          עבור/י לאפליקציית המלצרים →
+          המשך/המשיכי לאפליקציה →
         </a>
         <button
           onClick={signOut}
