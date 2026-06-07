@@ -761,73 +761,83 @@ function AddPositionModal({ templates, onClose, onAddTemplates, onAddCustom }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end"
+    <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-end"
       onClick={onClose}>
-      <div className="bg-white w-full max-w-md mx-auto rounded-t-3xl p-6 pb-6 max-h-[82vh] overflow-y-auto flex flex-col"
+      <div className="bg-white w-full max-w-md mx-auto rounded-t-3xl max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()} dir="rtl">
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-gray-900 font-black text-lg">הוספת משרה</h3>
-          <button onClick={onClose}
-            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
-            <X size={16} />
-          </button>
-        </div>
-        <p className="text-gray-500 text-xs mb-4">בחר/י משרה אחת או יותר ואז לחצ/י "הוספה".</p>
-
-        {/* Catalog positions — multi-select */}
-        {templates.length > 0 && (
-          <>
-            <p className="text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-2">תפקידים נפוצים</p>
-            <div className="grid grid-cols-2 gap-2 mb-5">
-              {templates.map((t) => {
-                const on = selected.includes(t.id);
-                return (
-                  <button key={t.id} onClick={() => toggle(t.id)}
-                    className={`relative rounded-2xl p-4 text-center shadow-sm border-2 transition-colors ${
-                      on ? "bg-gray-900 border-gray-900" : "bg-white border-gray-200 active:bg-gray-50"
-                    }`}>
-                    {on && (
-                      <span className="absolute top-2 left-2 w-5 h-5 rounded-full bg-white flex items-center justify-center">
-                        <Check size={13} className="text-gray-900" />
-                      </span>
-                    )}
-                    <div className="text-3xl mb-1">{t.icon || "💼"}</div>
-                    <p className={`text-sm font-bold ${on ? "text-white" : "text-gray-900"}`}>{t.name}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {/* Custom position */}
-        <p className="text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-2">משרה מותאמת</p>
-        <div className="flex gap-2 mb-4">
-          <input
-            type="text" value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { onAddCustom(customName); setCustomName(""); } }}
-            placeholder="שם המשרה"
-            className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900" />
-          <button onClick={() => { onAddCustom(customName); setCustomName(""); }}
-            disabled={!customName.trim()}
-            className="bg-gray-100 text-gray-900 px-4 py-2.5 rounded-xl text-sm font-bold active:bg-gray-200 disabled:opacity-30 flex items-center gap-1">
-            <Plus size={14} />הוספה
-          </button>
+        {/* Header — fixed, never scrolls */}
+        <div className="px-6 pt-6 pb-3 flex-shrink-0">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-gray-900 font-black text-lg">הוספת משרה</h3>
+            <button onClick={onClose}
+              className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
+              <X size={16} />
+            </button>
+          </div>
+          <p className="text-gray-500 text-xs">בחר/י משרה אחת או יותר ואז לחצ/י "הוספה".</p>
         </div>
 
-        {/* Commit selected catalog roles */}
-        <button onClick={commit} disabled={selected.length === 0 || submitting}
-          className="w-full bg-gray-900 text-white font-bold py-3.5 rounded-full text-sm active:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 flex items-center justify-center gap-2 mt-1">
-          {submitting
-            ? <><Loader2 size={16} className="animate-spin" />מוסיף…</>
-            : <>
-                <Check size={16} />
-                {selected.length === 0 ? "בחר/י משרות להוספה"
-                  : selected.length === 1 ? "הוספת משרה אחת"
-                  : `הוספת ${selected.length} משרות`}
-              </>}
-        </button>
+        {/* Scrollable body */}
+        <div className="px-6 flex-1 min-h-0 overflow-y-auto">
+          {/* Catalog positions — multi-select */}
+          {templates.length > 0 && (
+            <>
+              <p className="text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-2">תפקידים נפוצים</p>
+              <div className="grid grid-cols-2 gap-2 mb-5">
+                {templates.map((t) => {
+                  const on = selected.includes(t.id);
+                  return (
+                    <button key={t.id} onClick={() => toggle(t.id)}
+                      className={`relative rounded-2xl p-4 text-center shadow-sm border-2 transition-colors ${
+                        on ? "bg-gray-900 border-gray-900" : "bg-white border-gray-200 active:bg-gray-50"
+                      }`}>
+                      {on && (
+                        <span className="absolute top-2 left-2 w-5 h-5 rounded-full bg-white flex items-center justify-center">
+                          <Check size={13} className="text-gray-900" />
+                        </span>
+                      )}
+                      <div className="text-3xl mb-1">{t.icon || "💼"}</div>
+                      <p className={`text-sm font-bold ${on ? "text-white" : "text-gray-900"}`}>{t.name}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Custom position */}
+          <p className="text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-2">משרה מותאמת</p>
+          <div className="flex gap-2 mb-2">
+            <input
+              type="text" value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { onAddCustom(customName); setCustomName(""); } }}
+              placeholder="שם המשרה"
+              className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm outline-none focus:bg-white focus:border-gray-900" />
+            <button onClick={() => { onAddCustom(customName); setCustomName(""); }}
+              disabled={!customName.trim()}
+              className="bg-gray-100 text-gray-900 px-4 py-2.5 rounded-xl text-sm font-bold active:bg-gray-200 disabled:opacity-30 flex items-center gap-1">
+              <Plus size={14} />הוספה
+            </button>
+          </div>
+        </div>
+
+        {/* Pinned footer — always visible, clears the bottom nav + home indicator */}
+        <div className="flex-shrink-0 px-6 pt-3 border-t border-gray-100"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
+          {/* Commit selected catalog roles */}
+          <button onClick={commit} disabled={selected.length === 0 || submitting}
+            className="w-full bg-gray-900 text-white font-bold py-3.5 rounded-full text-sm active:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 flex items-center justify-center gap-2">
+            {submitting
+              ? <><Loader2 size={16} className="animate-spin" />מוסיף…</>
+              : <>
+                  <Check size={16} />
+                  {selected.length === 0 ? "בחר/י משרות להוספה"
+                    : selected.length === 1 ? "הוספת משרה אחת"
+                    : `הוספת ${selected.length} משרות`}
+                </>}
+          </button>
+        </div>
       </div>
     </div>
   );
