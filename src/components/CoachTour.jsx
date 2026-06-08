@@ -168,7 +168,7 @@ export default function CoachTour({ step, index, total, onNext, onBack, onSkip }
 export const OWNER_TOUR_STEPS = [
   { tab: "jobs", selector: '[data-tour="jobs-position"]',
     title: "המשרות שלך מוכנות! 🎉",
-    body: "כל מה שהגדרת בסיור כבר כאן — בלי שדות אדומים. לחיצה על משרה פותחת אותה, ושם מעדכנים שכר, משמרות ודרישות מתי שתרצה." },
+    body: "כל מה שהגדרת בסיור כבר כאן. לחיצה על משרה פותחת אותה, ושם מעדכנים שכר, משמרות ודרישות מתי שתרצה." },
   { tab: "jobs", selector: '[data-tour="jobs-toggle"]',
     title: "הדלקה וכיבוי גיוס",
     body: "לכל משרה יש מתג. כהה = פעיל ומגייס, אפור = מושהה. לחיצה אחת וזהו — בלי למחוק כלום." },
