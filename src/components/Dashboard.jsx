@@ -62,9 +62,17 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
   // After the first-time wizard, walk the owner through the key buttons (toggle
   // recruiting, edit a position, add more, then the settings screen) like a
   // video-game tutorial. Shown once per restaurant; replayable from Settings.
-  const tourSeenKey = `jobsTourSeen_${restaurant?.id || "anon"}`;
-  const [tourActive, setTourActive] = useState(false);
-  const [tourStep,   setTourStep]   = useState(0);
+  const tourSeenKey   = `jobsTourSeen_${restaurant?.id || "anon"}`;
+  const tourActiveKey = `jobsTourActive_${restaurant?.id || "anon"}`;
+  const tourStepKey   = `jobsTourStep_${restaurant?.id || "anon"}`;
+  // Resume an unfinished tour across reloads/navigation — it only ends when the
+  // owner completes it or explicitly taps "דילוג על הסיור".
+  const [tourActive, setTourActive] = useState(() => {
+    try { return localStorage.getItem(tourActiveKey) === "1"; } catch { return false; }
+  });
+  const [tourStep, setTourStep] = useState(() => {
+    try { return parseInt(localStorage.getItem(tourStepKey) || "0", 10) || 0; } catch { return 0; }
+  });
 
   const startTour = () => { setTourStep(0); setTab("jobs"); setTourActive(true); };
   const endTour = () => {
@@ -72,13 +80,29 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
     try { localStorage.setItem(tourSeenKey, "1"); } catch {}
   };
 
-  // Keep the active tab in sync with the current tour step (the tour spans both
-  // the משרות and הגדרות tabs). CoachTour then polls for the step's target.
+  // Persist tour progress so leaving the page (nav or full reload) resumes the
+  // tour rather than silently ending it.
+  useEffect(() => {
+    try {
+      if (tourActive) {
+        localStorage.setItem(tourActiveKey, "1");
+        localStorage.setItem(tourStepKey, String(tourStep));
+      } else {
+        localStorage.removeItem(tourActiveKey);
+        localStorage.removeItem(tourStepKey);
+      }
+    } catch { /* ignore */ }
+  }, [tourActive, tourStep, tourActiveKey, tourStepKey]);
+
+  // Keep the active tab pinned to the current tour step (the tour spans both the
+  // משרות and הגדרות tabs). `tab` is a dep so if the owner clicks away mid-tour we
+  // snap them straight back — they advance only via the tooltip buttons. CoachTour
+  // then polls for the step's target.
   useEffect(() => {
     if (!tourActive) return;
     const step = OWNER_TOUR_STEPS[tourStep];
     if (step?.tab && step.tab !== tab) setTab(step.tab);
-  }, [tourActive, tourStep]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tourActive, tourStep, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const finishJobsWizard = async () => {
     setJobsWizardSeen(true);

@@ -1,4 +1,4 @@
-import { useState, useLayoutEffect, useCallback } from "react";
+import { useState, useRef, useLayoutEffect, useCallback } from "react";
 import { Sparkles, ChevronLeft } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,6 +15,8 @@ import { Sparkles, ChevronLeft } from "lucide-react";
 // ─────────────────────────────────────────────────────────────────────────────
 export default function CoachTour({ step, index, total, onNext, onBack, onSkip }) {
   const [rect, setRect] = useState(null);
+  const tipRef = useRef(null);
+  const [tipH, setTipH] = useState(190);   // measured tooltip height (for viewport clamping)
   const selector = step?.selector || null;
 
   const measure = useCallback(() => {
@@ -59,11 +61,28 @@ export default function CoachTour({ step, index, total, onNext, onBack, onSkip }
     x: rect.x - pad, y: rect.y - pad, w: rect.w + pad * 2, h: rect.h + pad * 2,
   };
 
-  // Tooltip placement: below the hole if there's room, else above; centered if no target.
+  // Measure the tooltip so we can keep it fully on-screen even when the spotlight
+  // is a tall element (e.g. the restaurant-details card) that leaves no room above.
+  useLayoutEffect(() => {
+    if (tipRef.current) setTipH(tipRef.current.offsetHeight);
+  }, [rect, index]);
+
+  // Tooltip placement (absolute top, no vertical transform): prefer below the hole,
+  // then above; if the target is too tall for either, pin to the roomier edge. A
+  // final clamp guarantees the whole tooltip stays inside the viewport.
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-  const below = hole ? hole.y + hole.h + 14 : null;
-  const placeAbove = hole && below + 210 > vh;
-  const tipTop = !hole ? null : placeAbove ? Math.max(12, hole.y - 14) : below;
+  const margin = 12, gap = 14;
+  let tipTop = null;
+  if (hole) {
+    const belowTop = hole.y + hole.h + gap;
+    const aboveTop = hole.y - gap - tipH;
+    if (belowTop + tipH <= vh - margin)      tipTop = belowTop;   // fits below
+    else if (aboveTop >= margin)             tipTop = aboveTop;   // fits above
+    else tipTop = (vh - (hole.y + hole.h)) >= hole.y               // neither: roomier edge
+      ? vh - tipH - margin
+      : margin;
+    tipTop = Math.min(Math.max(margin, tipTop), vh - tipH - margin);
+  }
 
   return (
     // Root is interactive (pointer-events-auto) so taps on the dimmed page are
@@ -100,9 +119,10 @@ export default function CoachTour({ step, index, total, onNext, onBack, onSkip }
 
       {/* Tooltip */}
       <div
-        className="absolute left-1/2 -translate-x-1/2 w-[min(20rem,90vw)] bg-white rounded-2xl shadow-2xl p-4"
+        ref={tipRef}
+        className="absolute left-1/2 w-[min(20rem,90vw)] bg-white rounded-2xl shadow-2xl p-4"
         style={hole
-          ? { top: tipTop, transform: `translate(-50%, ${placeAbove ? "-100%" : "0"})` }
+          ? { top: tipTop, transform: "translateX(-50%)" }
           : { top: "50%", transform: "translate(-50%, -50%)" }}>
         <div className="flex items-center gap-2 mb-1.5">
           <div className="w-7 h-7 rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0">

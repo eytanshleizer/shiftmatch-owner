@@ -89,6 +89,8 @@ export default function OwnerTourDemo() {
   try {
     localStorage.removeItem("jobsWizardSeen_demo-rest");
     localStorage.removeItem("jobsTourSeen_demo-rest");
+    localStorage.removeItem("jobsTourActive_demo-rest");
+    localStorage.removeItem("jobsTourStep_demo-rest");
     localStorage.removeItem("settingsSeen_demo-rest");
   } catch { /* ignore */ }
 
