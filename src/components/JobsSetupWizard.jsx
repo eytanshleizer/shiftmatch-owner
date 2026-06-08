@@ -106,7 +106,7 @@ export default function JobsSetupWizard({ restaurant, onDone, onClose }) {
       else nx[t.id] = {
         id: t.id, templateId: t.id.startsWith("f-") ? null : t.id,
         name: t.name, icon: t.icon || "💼",
-        reveal: true, salary: restaurant?.hourly_rate || "",
+        reveal: false, salary: restaurant?.hourly_rate || "",
         reqs: {}, questions: [],
       };
       return nx;
@@ -119,7 +119,7 @@ export default function JobsSetupWizard({ restaurant, onDone, onClose }) {
     const id = "c-" + Date.now();
     setJobs((prev) => ({
       ...prev,
-      [id]: { id, templateId: null, name: n, icon: "💼", reveal: true,
+      [id]: { id, templateId: null, name: n, icon: "💼", reveal: false,
         salary: restaurant?.hourly_rate || "", reqs: {}, questions: [] },
     }));
     setCustomName("");

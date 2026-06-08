@@ -240,7 +240,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
           hourly_rate:   restaurant.hourly_rate || 0,
           open_count:    1,
           is_open:       true,
-          reveal_salary: true,
+          reveal_salary: false,
           shifts:        restaurant.shifts || [],
           requirements:  {},
         })))
@@ -270,7 +270,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
           hourly_rate:   restaurant.hourly_rate || 0,
           open_count:    1,
           is_open:       true,
-          reveal_salary: true,
+          reveal_salary: false,
           shifts:        restaurant.shifts || [],
           requirements:  {},
         })
