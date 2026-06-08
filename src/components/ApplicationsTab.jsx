@@ -51,6 +51,31 @@ export default function ApplicationsTab({ restaurant, role = "owner", onSchedule
   const [apps, setApps]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [openQuestions, setOpenQuestions] = useState([]); // free-text questions
+
+  // Load the owner's free-text "open questions" so we can show each candidate's
+  // answers in the detail view. Answers ride on applications.answers keyed by the
+  // question id (set by the waiter app at apply time).
+  useEffect(() => {
+    if (!restaurant?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data: positions } = await supabase
+        .from("restaurant_positions").select("id, name").eq("restaurant_id", restaurant.id);
+      const ids = (positions || []).map((p) => p.id);
+      if (!ids.length) { setOpenQuestions([]); return; }
+      const { data: qs } = await supabase
+        .from("position_screening_questions")
+        .select("id, question, answer_type, enabled, sort_order")
+        .in("position_id", ids);
+      if (cancelled) return;
+      const list = (qs || [])
+        .filter((q) => q.answer_type === "text" && q.question)
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      setOpenQuestions(list);
+    })();
+    return () => { cancelled = true; };
+  }, [restaurant?.id]);
 
   useEffect(() => {
     if (!restaurant?.id) return;
@@ -255,6 +280,33 @@ export default function ApplicationsTab({ restaurant, role = "owner", onSchedule
                 <p className="text-[10px] text-gray-400 mt-3">
                   🟢 תואם · 🔴 לא תואם · ⚪ ניטרלי · ⚫ לא ענה/תה
                 </p>
+              </div>
+            );
+          })()}
+
+          {/* Open-question answers — free text the candidate wrote at apply time */}
+          {(() => {
+            const answers = selected.answers || {};
+            const answered = openQuestions.filter((q) => {
+              const a = answers[q.id];
+              return a !== undefined && a !== null && String(a).trim() !== "";
+            });
+            if (!answered.length) return null;
+            return (
+              <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide mb-3">
+                  שאלות פתוחות
+                </p>
+                <div className="space-y-3">
+                  {answered.map((q) => (
+                    <div key={q.id} className="border-r-2 border-brand-500/40 pr-3">
+                      <p className="text-gray-500 text-[11px] mb-0.5">{q.question}</p>
+                      <p className="text-sm font-semibold text-gray-900 whitespace-pre-wrap">
+                        {String(answers[q.id])}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })()}

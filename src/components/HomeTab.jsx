@@ -66,20 +66,20 @@ export default function HomeTab({ restaurant: r, user, onUpdate, onGoTab }) {
                        || (r?.position_types?.length || 0);
 
   return (
-    <div className="bg-gray-50 min-h-full pb-24 text-gray-900">
+    <div className="bg-gray-50 min-h-full pb-24 lg:pb-10 text-gray-900">
 
       {/* ── Greeting header (no search here — search lives in the row below) ── */}
-      <div className="px-5 pt-20 pb-4 bg-white border-b border-gray-100">
+      <div className="px-5 pt-20 lg:pt-8 pb-4 bg-white border-b border-gray-100">
         <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">שלום 👋</p>
         <h1 className="text-2xl font-black text-gray-900 tracking-tight mt-1 truncate">{r?.name || "המסעדה שלי"}</h1>
         {r?.city && <p className="text-gray-400 text-xs mt-0.5">{locationLabel({ city: r.city, area: r.area, lat: r.lat, lng: r.lng })}</p>}
       </div>
 
-      <div className="px-4 pt-4 space-y-3">
+      <div className="px-4 pt-4 space-y-3 lg:px-6 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0 lg:items-start">
 
         {/* ── Active listing hero ── */}
         <button onClick={toggleActive} disabled={toggling}
-          className={`w-full rounded-3xl p-6 text-right transition-all active:scale-[0.99] ${
+          className={`lg:col-span-2 w-full rounded-3xl p-6 text-right transition-all active:scale-[0.99] ${
             r?.active
               ? "bg-gray-900 text-white shadow-xl shadow-gray-900/20"
               : "bg-white border border-gray-200 text-gray-700 shadow-sm"
@@ -115,10 +115,12 @@ export default function HomeTab({ restaurant: r, user, onUpdate, onGoTab }) {
         </button>
 
         {/* ── Smart matches feed (AI agent output) ── */}
-        <MatchesFeed restaurant={r} user={user} onScheduled={() => onGoTab?.("calendar")} />
+        <div className="lg:col-span-2">
+          <MatchesFeed restaurant={r} user={user} onScheduled={() => onGoTab?.("calendar")} />
+        </div>
 
         {/* ── KPI strip ── */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 gap-2 lg:col-span-2">
           <KPI label="פניות"    value={appCount}      accent="bg-brand-100 text-brand-700"   icon={<TrendingUp size={14} />} onClick={() => onGoTab?.("apps")} />
           <KPI label="צפיות"    value={stats.views}   icon={<Eye size={14} />} />
           <KPI label="WhatsApp" value={stats.whatsapp} accent="bg-green-100 text-green-700"  icon={<MessageCircle size={14} />} />
@@ -210,7 +212,7 @@ export default function HomeTab({ restaurant: r, user, onUpdate, onGoTab }) {
         </div>
 
         {/* ── Quick links ── */}
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-2 gap-2.5 lg:col-span-2 lg:grid-cols-4">
           <QuickLink icon={<Briefcase size={16} />} label="ניהול משרות" sub={`${totalPositions} משרות`}
             onClick={() => onGoTab?.("jobs")} />
           <QuickLink icon={<Users size={16} />} label="פניות" sub={`${appCount} חדשות`}

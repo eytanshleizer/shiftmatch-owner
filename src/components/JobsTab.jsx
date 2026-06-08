@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Plus, X, Check, Calendar, Moon, Sun, PartyPopper,
-  Loader2, ChevronDown, ChevronUp, Trash2, HelpCircle, AlertCircle, Sparkles, CheckCheck
+  Loader2, Trash2, HelpCircle, AlertCircle, Sparkles, CheckCheck
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { can } from "../lib/permissions";
@@ -124,7 +124,9 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
     const position_open = {}, position_salaries = {}, position_counts = {}, position_requirements = {};
     list.forEach((p) => {
       position_open[p.name]         = p.is_open;
-      position_salaries[p.name]     = p.hourly_rate;
+      // When the owner chooses not to reveal pay, mirror 0 so the waiter app
+      // shows "לפי סיכום" instead of a number.
+      position_salaries[p.name]     = p.reveal_salary === false ? 0 : p.hourly_rate;
       position_counts[p.name]       = p.open_count;
       position_requirements[p.name] = p.requirements || {};
     });
@@ -167,7 +169,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
 
   const togglePosition = (p) => patchPosition(p.id, { is_open: !p.is_open });
   const setSalary = (p, val) => patchPosition(p.id, { hourly_rate: parseInt(val) || 0 });
-  const setCount  = (p, val) => patchPosition(p.id, { open_count: Math.max(1, parseInt(val) || 1) });
+  const setReveal = (p, val) => patchPosition(p.id, { reveal_salary: val });
 
   // Toggle a single day-shift. Updates the UI instantly off the freshest array,
   // then debounces the DB write per-position so a burst of taps collapses into
@@ -227,7 +229,8 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
     let lastId = null;
     mutate(async () => {
       if (!toAdd.length) return;
-      // 1) Bulk-insert the positions in a single round-trip.
+      // Bulk-insert the positions in a single round-trip. Open questions (if any)
+      // are added per-position later from the expanded card.
       const { data: inserted } = await supabase
         .from("restaurant_positions")
         .insert(toAdd.map((t) => ({
@@ -237,38 +240,13 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
           hourly_rate:   restaurant.hourly_rate || 0,
           open_count:    1,
           is_open:       true,
+          reveal_salary: true,
           shifts:        restaurant.shifts || [],
           requirements:  {},
         })))
         .select();
       if (!inserted?.length) return;
       lastId = inserted[inserted.length - 1].id;
-
-      // 2) Pull all default screening questions for these templates at once,
-      //    then bulk-insert one row per (position × question).
-      const { data: defs } = await supabase
-        .from("screening_question_templates")
-        .select("*")
-        .in("position_template_id", toAdd.map((t) => t.id))
-        .order("sort_order");
-      if (defs?.length) {
-        const rows = [];
-        inserted.forEach((pos) => {
-          defs.filter((d) => d.position_template_id === pos.template_id).forEach((d) => {
-            rows.push({
-              position_id: pos.id,
-              template_id: d.id,
-              question:    d.question,
-              answer_type: d.answer_type,
-              options:     d.options,
-              enabled:     true,
-              is_required: false,
-              sort_order:  d.sort_order,
-            });
-          });
-        });
-        if (rows.length) await supabase.from("position_screening_questions").insert(rows);
-      }
     }).then(() => {
       if (lastId) setExpandedPos(lastId);
       addingRef.current = false;
@@ -292,6 +270,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
           hourly_rate:   restaurant.hourly_rate || 0,
           open_count:    1,
           is_open:       true,
+          reveal_salary: true,
           shifts:        restaurant.shifts || [],
           requirements:  {},
         })
@@ -307,13 +286,15 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
   const deleteQuestion = (q) => mutate(() =>
     supabase.from("position_screening_questions").delete().eq("id", q.id));
 
-  const addQuestion = (p, draft) => mutate(() =>
+  // Open questions are always free-text — the waiter answers them in their own
+  // words when applying. Stored as answer_type "text".
+  const addQuestion = (p, question) => mutate(() =>
     supabase.from("position_screening_questions").insert({
       position_id: p.id,
       template_id: null,
-      question:    draft.question,
-      answer_type: draft.answer_type,
-      options:     draft.options,
+      question,
+      answer_type: "text",
+      options:     [],
       enabled:     true,
       is_required: false,
       sort_order:  (p.questions?.length || 0) + 1,
@@ -335,10 +316,11 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
 
   // Setup nudge — open positions still missing pay or worker requirements.
   // This data flows to the waiter app, so flag it until it's filled in.
-  const needSalary = positions.filter((p) => p.is_open && !(p.hourly_rate > 0));
+  // Pay is only "missing" when the owner chose to reveal it but left it blank.
+  const needSalary = positions.filter((p) => p.is_open && p.reveal_salary !== false && !(p.hourly_rate > 0));
   const needReqs   = positions.filter((p) => p.is_open && countSetReqs(p.requirements || {}) === 0);
   const posNeedsSetup = (p) =>
-    p.is_open && (!(p.hourly_rate > 0) || countSetReqs(p.requirements || {}) === 0);
+    p.is_open && ((p.reveal_salary !== false && !(p.hourly_rate > 0)) || countSetReqs(p.requirements || {}) === 0);
 
   // Current onboarding step — drives the "game guide" pulses. Computed from live
   // state so it advances the moment the owner adds a position / fills in pay.
@@ -456,12 +438,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
               <button onClick={() => setShowAdd(true)}
                 className="relative text-gray-900 text-xs font-bold flex items-center gap-1">
                 <Plus size={13} />הוספת משרה
-                {guideStep === "add" && (
-                  <span className="absolute -top-1.5 -left-1.5 flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 attn-ring" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-                  </span>
-                )}
+                {guideStep === "add" && <AttnMark className="-top-2 -left-2" />}
               </button>
             )}
           </div>
@@ -479,10 +456,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                 <button onClick={() => setShowAdd(true)}
                   className="relative mt-4 mx-auto bg-gray-900 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-1.5 active:bg-gray-800">
                   <Plus size={14} />הוספת משרה
-                  <span className="absolute -top-1.5 -left-1.5 flex h-3 w-3">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 attn-ring" />
-                    <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500 ring-2 ring-white" />
-                  </span>
+                  <AttnMark className="-top-2 -left-2" />
                 </button>
               )}
             </SectionCard>
@@ -501,18 +475,15 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                   <div key={p.id}
                     className={`rounded-2xl border bg-white shadow-sm transition-opacity ${open ? "" : "opacity-60"}`}>
 
-                    {/* ── Card header ── */}
-                    <div className="p-4 flex items-center gap-3">
+                    {/* ── Card header — the whole row is tappable to open/close ── */}
+                    <div onClick={() => setExpandedPos(expanded ? null : p.id)}
+                      role="button" tabIndex={0}
+                      className="p-4 flex items-center gap-3 cursor-pointer select-none active:bg-gray-50 rounded-2xl">
                       <div className="relative flex-shrink-0">
                         <div className="w-11 h-11 rounded-2xl bg-gray-100 flex items-center justify-center text-xl">
                           {emoji}
                         </div>
-                        {posNeedsSetup(p) && (
-                          <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                            <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 attn-ring" />
-                            <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500 ring-2 ring-white" />
-                          </span>
-                        )}
+                        {posNeedsSetup(p) && <AttnMark />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-gray-900 font-bold text-sm">
@@ -522,14 +493,13 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                           )}
                         </p>
                         <p className="text-gray-500 text-[11px] mt-0.5">
-                          {p.hourly_rate > 0 ? `₪${p.hourly_rate}/שעה · ` : ""}
-                          {p.open_count} {p.open_count > 1 ? "משרות" : "משרה"}
+                          {p.reveal_salary !== false && p.hourly_rate > 0 ? `₪${p.hourly_rate}/שעה` : "שכר לפי סיכום"}
                           {reqCount > 0 && ` · ${reqCount} דרישות`}
                           {qCount > 0 && ` · ${qCount} שאלות`}
                           {!open && " · סגורה"}
                         </p>
                       </div>
-                      <button onClick={() => togglePosition(p)} disabled={!canEdit}
+                      <button onClick={(e) => { e.stopPropagation(); togglePosition(p); }} disabled={!canEdit}
                         className={`w-11 h-7 rounded-full flex items-center transition-colors flex-shrink-0 ${
                           open ? "bg-gray-900" : "bg-gray-200"
                         } disabled:opacity-50`}>
@@ -537,12 +507,8 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                           open ? "translate-x-4" : "translate-x-0"
                         }`} />
                       </button>
-                      <button onClick={() => setExpandedPos(expanded ? null : p.id)}
-                        className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 active:bg-gray-200 flex-shrink-0">
-                        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                      </button>
                       {canEdit && (
-                        <button onClick={() => removePosition(p)}
+                        <button onClick={(e) => { e.stopPropagation(); removePosition(p); }}
                           title="מחיקת המשרה"
                           className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center text-red-500 active:bg-red-100 flex-shrink-0">
                           <Trash2 size={15} />
@@ -554,10 +520,24 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                     {expanded && (
                       <div className="border-t border-gray-100 px-4 pb-5 pt-4 space-y-5">
 
-                        {/* ─ Pay & count ─ */}
-                        <ReqSection label="פרטי המשרה">
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
+                        {/* ─ Pay + whether to reveal it ─ */}
+                        <ReqSection label="שכר">
+                          <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-3 mt-2">
+                            <div className="min-w-0">
+                              <p className="text-gray-900 text-sm font-bold">הצגת שכר למלצרים</p>
+                              <p className="text-gray-500 text-[11px] mt-0.5">הצגת השכר עוזרת לגייס מהר יותר</p>
+                            </div>
+                            <button onClick={() => setReveal(p, !(p.reveal_salary !== false))} disabled={!canEdit}
+                              className={`w-11 h-7 rounded-full flex items-center transition-colors flex-shrink-0 ${
+                                p.reveal_salary !== false ? "bg-gray-900" : "bg-gray-200"
+                              } disabled:opacity-50`}>
+                              <div className={`w-5 h-5 bg-white rounded-full shadow-md transition-transform mx-1 ${
+                                p.reveal_salary !== false ? "translate-x-4" : "translate-x-0"
+                              }`} />
+                            </button>
+                          </div>
+                          {p.reveal_salary !== false && (
+                            <div className="mt-2">
                               <FieldLabel>
                                 שכר לשעה (₪)
                                 {!(p.hourly_rate > 0) && (
@@ -574,20 +554,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                                     : "bg-red-50 border-red-300 focus:border-red-500"
                                 }`} />
                             </div>
-                            <div>
-                              <FieldLabel>כמות משרות פתוחות</FieldLabel>
-                              <div className="flex items-center gap-1">
-                                <button onClick={() => setCount(p, p.open_count - 1)}
-                                  disabled={!canEdit || p.open_count <= 1}
-                                  className="w-8 h-9 rounded-lg bg-gray-100 text-gray-700 font-bold flex items-center justify-center disabled:opacity-30 active:bg-gray-200 text-lg">−</button>
-                                <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-2 py-2 text-gray-900 text-sm text-center font-bold">
-                                  {p.open_count}
-                                </div>
-                                <button onClick={() => setCount(p, p.open_count + 1)} disabled={!canEdit}
-                                  className="w-8 h-9 rounded-lg bg-gray-100 text-gray-700 font-bold flex items-center justify-center active:bg-gray-200 disabled:opacity-50 text-lg">+</button>
-                              </div>
-                            </div>
-                          </div>
+                          )}
                         </ReqSection>
 
                         {/* ─ Shifts for this position ─ */}
@@ -659,20 +626,6 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                           </div>
                         </ReqSection>
 
-                        {/* ─ High school ─ */}
-                        <ReqSection label="תעודת בגרות">
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            <SmallChip on={reqs.high_school === true} disabled={!canEdit}
-                              onClick={() => setReqs(p, { high_school: reqs.high_school === true ? null : true })}>
-                              חובה
-                            </SmallChip>
-                            <SmallChip on={reqs.high_school === false} disabled={!canEdit}
-                              onClick={() => setReqs(p, { high_school: reqs.high_school === false ? null : false })}>
-                              לא נדרש
-                            </SmallChip>
-                          </div>
-                        </ReqSection>
-
                         {/* ─ Shifts per week ─ */}
                         <ReqSection label="משמרות בשבוע">
                           <div className="flex flex-wrap gap-2 mt-2">
@@ -705,12 +658,12 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                           </div>
                         </ReqSection>
 
-                        {/* ─ Screening questions (per position) ─ */}
-                        <ScreeningSection
+                        {/* ─ Open questions (per position) ─ */}
+                        <OpenQuestionsSection
                           position={p} canEdit={canEdit}
                           onToggle={toggleQuestion}
                           onDelete={deleteQuestion}
-                          onAdd={(draft) => addQuestion(p, draft)} />
+                          onAdd={(text) => addQuestion(p, text)} />
 
                         {/* ─ Remove ─ */}
                         {canEdit && (
@@ -858,31 +811,28 @@ function AddPositionModal({ templates, onClose, onAddTemplates, onAddCustom }) {
   );
 }
 
-// ── Screening questions section (per position) ───────────────────────────────
-function ScreeningSection({ position, canEdit, onToggle, onDelete, onAdd }) {
-  const [adding,   setAdding]   = useState(false);
-  const [text,     setText]     = useState("");
-  const [type,     setType]     = useState("boolean");
-  const [optsText, setOptsText] = useState("");
+// ── Open questions section (per position) ────────────────────────────────────
+// Free-text questions the owner wants answered by every applicant. The waiter
+// types an answer in their own words when applying (non-blocking). No answer
+// types, no options — just the question text.
+function OpenQuestionsSection({ position, canEdit, onToggle, onDelete, onAdd }) {
+  const [adding, setAdding] = useState(false);
+  const [text,   setText]   = useState("");
 
   const questions = position.questions || [];
 
   const submit = () => {
     const q = text.trim();
     if (!q) return;
-    let options = [];
-    if (type === "single_choice" || type === "multi_choice") {
-      options = optsText.split(",").map((s) => s.trim()).filter(Boolean);
-      if (options.length < 2) return;
-    } else if (type === "scale") {
-      options = { min: 1, max: 5 };
-    }
-    onAdd({ question: q, answer_type: type, options });
-    setText(""); setOptsText(""); setType("boolean"); setAdding(false);
+    onAdd(q);
+    setText(""); setAdding(false);
   };
 
   return (
-    <ReqSection label="שאלות סינון למשרה זו">
+    <ReqSection label="שאלות פתוחות למשרה זו">
+      <p className="text-gray-400 text-[11px] mt-1 leading-relaxed">
+        שאלות שהמלצר עונה עליהן בחופשי בעת ההגשה — למשל "מה ניסיונך הקודם?"
+      </p>
       <div className="space-y-2 mt-2">
         {questions.length === 0 && !adding && (
           <p className="text-gray-400 text-xs">אין שאלות עדיין למשרה זו.</p>
@@ -894,10 +844,6 @@ function ScreeningSection({ position, canEdit, onToggle, onDelete, onAdd }) {
             <HelpCircle size={13} className="text-gray-400 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-gray-900 text-xs font-semibold truncate">{q.question}</p>
-              <p className="text-gray-400 text-[10px]">
-                {ANSWER_TYPE_LABEL[q.answer_type] || q.answer_type}
-                {!q.template_id && " · מותאמת"}
-              </p>
             </div>
             {canEdit && (
               <>
@@ -914,34 +860,22 @@ function ScreeningSection({ position, canEdit, onToggle, onDelete, onAdd }) {
           </div>
         ))}
 
-        {/* Add custom question */}
+        {/* Add open question */}
         {canEdit && (adding ? (
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
             <input
               type="text" value={text}
               onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
               placeholder="נסח/י שאלה…"
+              autoFocus
               className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm outline-none focus:border-gray-900" />
-            <div className="flex flex-wrap gap-1.5">
-              {Object.entries(ANSWER_TYPE_LABEL).map(([key, label]) => (
-                <SmallChip key={key} on={type === key} onClick={() => setType(key)}>
-                  {label}
-                </SmallChip>
-              ))}
-            </div>
-            {(type === "single_choice" || type === "multi_choice") && (
-              <input
-                type="text" value={optsText}
-                onChange={(e) => setOptsText(e.target.value)}
-                placeholder="אפשרויות, מופרדות בפסיק"
-                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm outline-none focus:border-gray-900" />
-            )}
             <div className="flex gap-2">
               <button onClick={submit}
                 className="flex-1 bg-gray-900 text-white text-xs font-bold py-2 rounded-lg active:bg-gray-800 flex items-center justify-center gap-1">
                 <Check size={13} />שמירה
               </button>
-              <button onClick={() => { setAdding(false); setText(""); setOptsText(""); }}
+              <button onClick={() => { setAdding(false); setText(""); }}
                 className="px-4 bg-gray-100 text-gray-600 text-xs font-bold py-2 rounded-lg active:bg-gray-200">
                 ביטול
               </button>
@@ -950,7 +884,7 @@ function ScreeningSection({ position, canEdit, onToggle, onDelete, onAdd }) {
         ) : (
           <button onClick={() => setAdding(true)}
             className="w-full border border-dashed border-gray-300 text-gray-600 text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:bg-gray-50">
-            <Plus size={13} />שאלת סינון
+            <Plus size={13} />שאלה פתוחה
           </button>
         ))}
       </div>
@@ -966,7 +900,6 @@ function countSetReqs(reqs) {
   if (reqs.experience)                                n++;
   if (reqs.age_min || reqs.age_max)                   n++;
   if (reqs.military)                                  n++;
-  if (reqs.high_school !== null && reqs.high_school !== undefined) n++;
   if (reqs.shifts_key)                                n++;
   if (reqs.weekends !== null && reqs.weekends !== undefined)       n++;
   if ((reqs.custom || []).length > 0)                 n++;
@@ -997,6 +930,16 @@ function ReqSection({ label, children }) {
 function FieldLabel({ children }) {
   return (
     <p className="text-gray-500 text-[11px] font-bold uppercase tracking-wide mb-1.5">{children}</p>
+  );
+}
+
+// A small red "!" attention badge — replaces the old pulsing red dot so it's
+// clearer to first-time owners that something needs their attention.
+function AttnMark({ className = "-top-1.5 -right-1.5" }) {
+  return (
+    <span className={`absolute ${className} w-4 h-4 rounded-full bg-red-500 ring-2 ring-white flex items-center justify-center text-white text-[11px] font-black leading-none attn-ring`}>
+      !
+    </span>
   );
 }
 
