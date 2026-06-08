@@ -13,12 +13,30 @@ const demoParam =
 const isJobsDemo = ["jobs", "wizard"].includes(demoParam);
 const isTourDemo = demoParam === "tour";
 const isScheduleDemo = demoParam === "schedule";
+const isInsightsDemo = demoParam === "insights";
+const isOwnerTourDemo = demoParam === "ownertour";
 
 const JobsDemo = React.lazy(() => import("./demo/JobsDemo"));
 const TourDemo = React.lazy(() => import("./demo/TourDemo"));
 const ScheduleDemo = React.lazy(() => import("./demo/ScheduleDemo"));
+const InsightsDemo = React.lazy(() => import("./demo/InsightsDemo"));
+const OwnerTourDemo = React.lazy(() => import("./demo/OwnerTourDemo"));
 
 function Root() {
+  if (isOwnerTourDemo) {
+    return (
+      <Suspense fallback={null}>
+        <OwnerTourDemo />
+      </Suspense>
+    );
+  }
+  if (isInsightsDemo) {
+    return (
+      <Suspense fallback={null}>
+        <InsightsDemo />
+      </Suspense>
+    );
+  }
   if (isTourDemo) {
     return (
       <Suspense fallback={null}>

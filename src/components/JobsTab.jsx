@@ -53,7 +53,7 @@ const ANSWER_TYPE_LABEL = {
   text:          "טקסט חופשי",
 };
 
-export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
+export default function JobsTab({ restaurant, onUpdate, role = "owner", setupAcknowledged = false }) {
   const canEdit = can(role, "edit_jobs");
 
   const [positions, setPositions] = useState([]);
@@ -319,8 +319,11 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
   // Pay is only "missing" when the owner chose to reveal it but left it blank.
   const needSalary = positions.filter((p) => p.is_open && p.reveal_salary !== false && !(p.hourly_rate > 0));
   const needReqs   = positions.filter((p) => p.is_open && countSetReqs(p.requirements || {}) === 0);
+  // Once the owner has finished the guided setup wizard + tour, the setup is
+  // considered acknowledged and we stop showing the red "missing details"
+  // nudges — they can still fill anything in later from each position card.
   const posNeedsSetup = (p) =>
-    p.is_open && ((p.reveal_salary !== false && !(p.hourly_rate > 0)) || countSetReqs(p.requirements || {}) === 0);
+    !setupAcknowledged && p.is_open && ((p.reveal_salary !== false && !(p.hourly_rate > 0)) || countSetReqs(p.requirements || {}) === 0);
 
   // Current onboarding step — drives the "game guide" pulses. Computed from live
   // state so it advances the moment the owner adds a position / fills in pay.
@@ -377,7 +380,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
 
         {/* ── Setup nudge — guides owners to fill pay + requirements so the data
             flows to the waiter app and listings stop showing "לפי סיכום". ── */}
-        {canEdit && !loading && (needSalary.length > 0 || needReqs.length > 0) && (
+        {canEdit && !loading && !setupAcknowledged && (needSalary.length > 0 || needReqs.length > 0) && (
           <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
             <div className="flex items-start gap-2.5">
               <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
@@ -435,7 +438,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
           <div className="flex items-center justify-between px-1 mb-2">
             <p className="text-gray-500 text-xs font-bold uppercase tracking-wide">משרות</p>
             {canEdit && (
-              <button onClick={() => setShowAdd(true)}
+              <button onClick={() => setShowAdd(true)} data-tour="jobs-add"
                 className="relative text-gray-900 text-xs font-bold flex items-center gap-1">
                 <Plus size={13} />הוספת משרה
                 {guideStep === "add" && <AttnMark className="-top-2 -left-2" />}
@@ -462,7 +465,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
             </SectionCard>
           ) : (
             <div className="space-y-2">
-              {positions.map((p) => {
+              {positions.map((p, idx) => {
                 const open     = p.is_open;
                 const expanded = expandedPos === p.id;
                 const reqs     = p.requirements || {};
@@ -472,7 +475,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                 const emoji    = tmpl?.icon || "💼";
 
                 return (
-                  <div key={p.id}
+                  <div key={p.id} data-tour={idx === 0 ? "jobs-position" : undefined}
                     className={`rounded-2xl border bg-white shadow-sm transition-opacity ${open ? "" : "opacity-60"}`}>
 
                     {/* ── Card header — the whole row is tappable to open/close ── */}
@@ -500,6 +503,7 @@ export default function JobsTab({ restaurant, onUpdate, role = "owner" }) {
                         </p>
                       </div>
                       <button onClick={(e) => { e.stopPropagation(); togglePosition(p); }} disabled={!canEdit}
+                        data-tour={idx === 0 ? "jobs-toggle" : undefined}
                         className={`w-11 h-7 rounded-full flex items-center transition-colors flex-shrink-0 ${
                           open ? "bg-gray-900" : "bg-gray-200"
                         } disabled:opacity-50`}>

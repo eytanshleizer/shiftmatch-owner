@@ -14,6 +14,7 @@ import SettingsTab     from "./SettingsTab";
 import PlansTab        from "./PlansTab";
 import TeamPage        from "./TeamPage";
 import QuestionnaireEditor from "./QuestionnaireEditor";
+import CoachTour, { OWNER_TOUR_STEPS } from "./CoachTour";
 
 const TABS = [
   { id: "home",     label: "בית",      icon: Home },
@@ -57,6 +58,28 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
   const hasPositions = (restaurant?.position_types?.length || 0) > 0;
   const showJobsWizard = tab === "jobs" && !jobsWizardSeen && !hasPositions;
 
+  // ── Guided coach-mark tour ──
+  // After the first-time wizard, walk the owner through the key buttons (toggle
+  // recruiting, edit a position, add more, then the settings screen) like a
+  // video-game tutorial. Shown once per restaurant; replayable from Settings.
+  const tourSeenKey = `jobsTourSeen_${restaurant?.id || "anon"}`;
+  const [tourActive, setTourActive] = useState(false);
+  const [tourStep,   setTourStep]   = useState(0);
+
+  const startTour = () => { setTourStep(0); setTab("jobs"); setTourActive(true); };
+  const endTour = () => {
+    setTourActive(false);
+    try { localStorage.setItem(tourSeenKey, "1"); } catch {}
+  };
+
+  // Keep the active tab in sync with the current tour step (the tour spans both
+  // the משרות and הגדרות tabs). CoachTour then polls for the step's target.
+  useEffect(() => {
+    if (!tourActive) return;
+    const step = OWNER_TOUR_STEPS[tourStep];
+    if (step?.tab && step.tab !== tab) setTab(step.tab);
+  }, [tourActive, tourStep]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const finishJobsWizard = async () => {
     setJobsWizardSeen(true);
     try { localStorage.setItem(jobsWizardSeenKey, "1"); } catch {}
@@ -70,6 +93,10 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
       } catch {}
     }
     setTab("jobs");
+    // Kick off the guided coach-mark tour the first time only.
+    let tourSeen = true;
+    try { tourSeen = localStorage.getItem(tourSeenKey) === "1"; } catch {}
+    if (!tourSeen) { setTourStep(0); setTourActive(true); }
   };
 
   // User pill bits
@@ -84,12 +111,15 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
 
   // Nudge owners through the whole setup — shows a pulsing red dot on the משרות
   // tab and a coach bubble until every open position has pay + requirements.
-  const jobsNeedSetup = needsSetup(restaurant);
   const guideStep     = getGuideStep(restaurant);   // "add" | "salary" | "reqs" | null
+  // Once the owner has completed the first-time wizard, treat setup as
+  // acknowledged: drop the red attention badges + nudge bubble (the guided tour
+  // teaches them where everything is, so the "errors" would be redundant noise).
+  const jobsNeedSetup = needsSetup(restaurant) && !jobsWizardSeen;
 
   // The coach bubble points owners to the משרות tab whenever they're elsewhere
   // and there's still setup to finish (and they haven't dismissed it this session).
-  const showCoach = guideStep && tab !== "jobs" && !coachDismissed;
+  const showCoach = guideStep && tab !== "jobs" && !coachDismissed && !jobsWizardSeen && !tourActive;
   const coachText = {
     add:    "בואו נתחיל! הוסיפו את המשרות שאתם מגייסים",
     salary: "כמעט שם — הגדירו שכר לשעה למשרות שלכם",
@@ -141,7 +171,8 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
        <div className="w-full lg:max-w-5xl lg:mx-auto">
         {tab === "home"     && <HomeTab     restaurant={restaurant} user={user} onUpdate={onUpdate}
           onGoTab={goTab} />}
-        {tab === "jobs"     && <JobsTab     restaurant={restaurant} onUpdate={onUpdate} role={role} />}
+        {tab === "jobs"     && <JobsTab     restaurant={restaurant} onUpdate={onUpdate} role={role}
+          setupAcknowledged={jobsWizardSeen} />}
         {tab === "calendar" && <CalendarTab restaurant={restaurant} user={user} role={role} />}
         {tab === "apps"     && <ApplicationsTab restaurant={restaurant} role={role} />}
         {tab === "settings" && <SettingsTab restaurant={restaurant} onUpdate={onUpdate}
@@ -149,6 +180,7 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
           onOpenPlans={() => setPlansOpen(true)}
           onOpenTeam={() => setTeamOpen(true)}
           onOpenQuestionnaire={() => setQuestionnaireOpen(true)}
+          onReplayTour={startTour}
           role={role} />}
        </div>
       </div>
@@ -219,6 +251,7 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
               const active = tab === id;
               return (
                 <button key={id} onClick={() => setTab(id)}
+                  data-tour={id === "settings" ? "nav-settings" : undefined}
                   className="flex-1 flex flex-col items-center gap-1 py-1 relative transition-all duration-200"
                   style={{ WebkitTapHighlightColor: "transparent" }}>
                   {active && (
@@ -244,6 +277,21 @@ export default function Dashboard({ restaurant, user, role, onUpdate }) {
           </div>
         </div>
       </div>
+
+      {/* Guided coach-mark tour — spotlights the key buttons across משרות + הגדרות */}
+      {tourActive && (
+        <CoachTour
+          step={OWNER_TOUR_STEPS[tourStep]}
+          index={tourStep}
+          total={OWNER_TOUR_STEPS.length}
+          onNext={() => {
+            if (tourStep < OWNER_TOUR_STEPS.length - 1) setTourStep(tourStep + 1);
+            else endTour();
+          }}
+          onBack={() => setTourStep((s) => Math.max(0, s - 1))}
+          onSkip={endTour}
+        />
+      )}
     </div>
     </div>
   );

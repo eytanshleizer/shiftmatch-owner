@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Settings, Store, MapPin, Phone, MessageCircle, Image as ImageIcon,
-  Clock, Gift, ListChecks, FileText, Check, Loader2, LogOut, CreditCard, X, Users, HelpCircle, Upload, Trash2
+  Clock, Gift, ListChecks, FileText, Check, Loader2, LogOut, CreditCard, X, Users, HelpCircle, Upload, Trash2, Sparkles
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { normalizePhoneInput, isValidIsraeliPhone } from "../lib/phone";
@@ -56,7 +56,7 @@ const SOFT_OPTIONS = [
   { key: "car_required",    label: "מעדיף עם רכב" },
 ];
 
-export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPlans, onOpenTeam, onOpenQuestionnaire, role = "owner" }) {
+export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPlans, onOpenTeam, onOpenQuestionnaire, onReplayTour, role = "owner" }) {
   // Per spec §2.2 — only owner/admin/manager can edit restaurant fields
   // & screening; recruiter/viewer see read-only.
   const canEditJobs       = can(role, "edit_jobs");
@@ -265,7 +265,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
         </div>
 
         {/* ── Basic Info ── */}
-        <Section icon={Store} title="פרטי מסעדה">
+        <Section icon={Store} title="פרטי מסעדה" dataTour="settings-details">
           <Field label="שם המסעדה">
             <input type="text" value={form.name} onChange={(e) => set({ name: e.target.value })}
               className={inputCls} placeholder="לדוגמה: מסה" />
@@ -329,7 +329,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
         </Section>
 
         {/* ── Contact ── */}
-        <Section icon={Phone} title="פרטי קשר לגיוס">
+        <Section icon={Phone} title="פרטי קשר לגיוס" dataTour="settings-contact">
           <Field label="שם איש קשר">
             <input type="text" value={form.contact_name} onChange={(e) => set({ contact_name: e.target.value })}
               className={inputCls} placeholder="מנהל משמרת" />
@@ -362,7 +362,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
         </Section>
 
         {/* ── Shifts ── */}
-        <Section icon={Clock} title="משמרות זמינות">
+        <Section icon={Clock} title="משמרות זמינות" dataTour="settings-shifts">
           <p className="text-gray-500 text-xs mb-3">בחר/בחרי את כל המשמרות שבהן יש משרות</p>
           <div className="flex flex-wrap gap-2">
             {SHIFTS.map((s) => {
@@ -506,7 +506,7 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
         </fieldset>
 
         {/* ── Actions ── */}
-        <div className="bg-white border border-gray-200 rounded-2xl divide-y divide-white/5 overflow-hidden">
+        <div data-tour="settings-actions" className="bg-white border border-gray-200 rounded-2xl divide-y divide-white/5 overflow-hidden">
           {onOpenTeam && (
             <button onClick={onOpenTeam}
               className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-gray-50">
@@ -539,6 +539,16 @@ export default function SettingsTab({ restaurant, onUpdate, onSignOut, onOpenPla
                 <CreditCard size={16} />
               </div>
               <span className="flex-1 text-right text-gray-900 font-bold text-sm">תוכניות ומחירים</span>
+              <span className="text-gray-600">›</span>
+            </button>
+          )}
+          {onReplayTour && (
+            <button onClick={onReplayTour}
+              className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-gray-50">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-500 flex items-center justify-center">
+                <Sparkles size={16} />
+              </div>
+              <span className="flex-1 text-right text-gray-900 font-bold text-sm">סיור מודרך מחדש</span>
               <span className="text-gray-600">›</span>
             </button>
           )}
@@ -624,9 +634,9 @@ const chipCls = (on) =>
       : "bg-gray-50 text-gray-400 border border-gray-200"
   }`;
 
-function Section({ icon: Icon, title, children }) {
+function Section({ icon: Icon, title, children, dataTour }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
+    <div data-tour={dataTour} className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
       <div className="flex items-center gap-2 mb-1">
         <Icon size={15} className="text-brand-400" />
         <h3 className="text-white font-bold text-sm">{title}</h3>

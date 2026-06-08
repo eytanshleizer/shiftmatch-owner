@@ -3,7 +3,8 @@ import { supabase } from "../lib/supabase";
 import JobsSetupWizard from "../components/JobsSetupWizard";
 import {
   Plus, Settings, Home, Briefcase, Calendar, Inbox,
-  PartyPopper, Moon, Sun, Sparkles, ChevronLeft, Check, Share2, Power, Trash2,
+  PartyPopper, Moon, Sun, Sparkles, ChevronLeft, Check, Trash2,
+  Store, Phone as PhoneIcon, Clock, Gift, Users, HelpCircle, CreditCard, LogOut, MapPin,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -241,11 +242,12 @@ export default function TourDemo() {
   const toggleRef    = useRef(null);
   const cardRef      = useRef(null);
   const addRef       = useRef(null);
-  const navSetRef    = useRef(null);
-  const setDetailRef = useRef(null);
-  const setRecruitRef= useRef(null);
-  const setShiftRef  = useRef(null);
-  const setAccountRef= useRef(null);
+  const navSetRef     = useRef(null);
+  const setDetailRef  = useRef(null);
+  const setContactRef = useRef(null);
+  const setShiftRef   = useRef(null);
+  const setAccountRef = useRef(null);
+  const setSaveRef    = useRef(null);
 
   const startWizard = () => { resetStore(); setPhase("wizard"); };
 
@@ -265,10 +267,11 @@ export default function TourDemo() {
     { ref: navSetRef, title: "עכשיו — ההגדרות",          body: "בוא נראה לך איפה משנים את פרטי המסעדה ואת הגדרות הגיוס.", next: "להגדרות" },
   ];
   const settingsSteps = [
-    { ref: setDetailRef,  title: "פרטי המסעדה",        body: "שם, סוג, עיר ותמונה — כל מה שהמלצרים רואים בכרטיס המודעה, נערך כאן." },
-    { ref: setRecruitRef, title: "מתג גיוס ראשי",      body: "רוצה להשהות את כל הגיוס בבת אחת? מתג אחד מכבה את המודעות לכל המשרות." },
-    { ref: setShiftRef,   title: "משמרות חובה",         body: "הגדר משמרות שחובה להיות זמין אליהן — מי שלא זמין פשוט לא יוצג לך." },
-    { ref: setAccountRef, title: "חשבון ושיתוף",        body: "שיתוף מנהלים, פרטי קשר וניהול החשבון — הכול במקום אחד.", next: "כמעט סיימנו" },
+    { ref: setDetailRef,  title: "פרטי המסעדה",        body: "שם, סוג מטבח, עיר, כתובת ותמונת כריכה — בדיוק מה שהמלצרים רואים בכרטיס המודעה. הכול נערך כאן." },
+    { ref: setContactRef, title: "פרטי קשר לגיוס",     body: "וואטסאפ וטלפון שאליהם המועמדים פונים. מומלץ מספר ייעודי לגיוס כדי לא להתבלבל." },
+    { ref: setShiftRef,   title: "משמרות זמינות",        body: "סמן את כל המשמרות שבהן יש לך משרות — בוקר, ערב, סופ״ש ועוד. זה עוזר להתאים את המועמדים הנכונים." },
+    { ref: setAccountRef, title: "צוות, שאלון וחשבון",   body: "ניהול צוות, שאלון סינון למועמדים, תוכניות ומחירים והתנתקות — כל הפעולות במקום אחד.", next: "כמעט סיימנו" },
+    { ref: setSaveRef,    title: "שמירת שינויים",        body: "שינית משהו? כפתור 'שמור שינויים' נדלק למטה. לחיצה אחת והכול מתעדכן.", next: "סיום הסיור" },
     { ref: null,          title: "סיימת את הסיור! 🚀",   body: "זהו — אתה מוכן לקבל מועמדים. אפשר להריץ את הסיור שוב בכל עת מתוך ההגדרות.", next: "סיום" },
   ];
 
@@ -319,33 +322,94 @@ export default function TourDemo() {
     );
   }
 
-  // ── Phase: SETTINGS (mock page + coach-marks) ──
+  // ── Phase: SETTINGS (mock page mirroring the real SettingsTab + coach-marks) ──
   if (phase === "settings") {
+    const shiftOptions = ["בוקר", "צהריים", "ערב", "לילה", "סופ\"ש"];
+    const benefitOptions = ["טיפים", "ארוחת עובד", "נסיעות", "חנייה", "שעות גמישות"];
     return (
       <Phone>
         <TourStyles />
-        <div className="h-full bg-gray-50 overflow-y-auto pb-24" dir="rtl">
-          <div className="px-5 pt-16 pb-3">
-            <h1 className="text-3xl font-black text-gray-900">הגדרות</h1>
-            <p className="text-gray-500 text-sm mt-1">ניהול המסעדה והחשבון</p>
+        <div className="h-full bg-gray-50 overflow-y-auto pb-28 text-gray-900" dir="rtl">
+          {/* Header — matches real SettingsTab */}
+          <div className="px-5 pt-14 pb-4">
+            <h2 className="text-gray-900 font-black text-xl flex items-center gap-2">
+              <Settings size={20} className="text-brand-400" />
+              הגדרות
+            </h2>
+            <p className="text-gray-500 text-xs mt-0.5">עריכת פרטי המסעדה</p>
           </div>
-          <div className="px-4 space-y-3">
-            <SettingCard refEl={setDetailRef} emoji="🏠" title="פרטי המסעדה" sub="שם · סוג · עיר · תמונה" />
-            <div ref={setRecruitRef} className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-green-50 flex items-center justify-center"><Power size={20} className="text-green-600" /></div>
-                <div>
-                  <p className="text-gray-900 font-bold text-sm">גיוס פעיל</p>
-                  <p className="text-gray-500 text-[11px]">כל המשרות מתפרסמות למלצרים</p>
-                </div>
+
+          <div className="px-4 space-y-4">
+            {/* Cover image preview */}
+            <div className="relative h-32 rounded-2xl overflow-hidden bg-gradient-to-br from-gray-700 to-gray-900 flex items-end">
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+              <div className="relative p-3">
+                <p className="text-white text-lg font-black drop-shadow">מסעדת הדגמה</p>
+                <p className="text-white/80 text-[11px] flex items-center gap-1 mt-0.5">
+                  <MapPin size={11} />תל אביב · מסעדת שף
+                </p>
               </div>
-              <div className="w-11 h-7 rounded-full bg-gray-900 flex items-center"><div className="w-5 h-5 bg-white rounded-full shadow-md mx-1 translate-x-4" /></div>
             </div>
-            <SettingCard refEl={setShiftRef} emoji="📅" title="משמרות חובה" sub="סופ״ש · לילות · חגים · בוקר מוקדם" />
-            <SettingCard refEl={setAccountRef} emoji="👤" title="חשבון ושיתוף" sub="מנהלים · פרטי קשר · התנתקות"
-              right={<Share2 size={18} className="text-gray-400" />} />
+
+            {/* פרטי מסעדה */}
+            <MockSection refEl={setDetailRef} icon={Store} title="פרטי מסעדה">
+              <MockField label="שם המסעדה" value="מסעדת הדגמה" />
+              <MockField label="סוג מטבח" value="מסעדת שף" chevron />
+              <div className="grid grid-cols-2 gap-2">
+                <MockField label="עיר" value="תל אביב" />
+                <MockField label="שכונה / אזור" value="שרונה" />
+              </div>
+              <MockField label="כתובת מלאה" value="הארבעה 19, תל אביב" />
+            </MockSection>
+
+            {/* פרטי קשר לגיוס */}
+            <MockSection refEl={setContactRef} icon={PhoneIcon} title="פרטי קשר לגיוס">
+              <MockField label="שם איש קשר" value="מנהל משמרת" />
+              <MockField label="וואטסאפ לגיוס" value="0501234567" ltr />
+              <MockField label="טלפון" value="0312345678" ltr />
+            </MockSection>
+
+            {/* משמרות זמינות */}
+            <MockSection refEl={setShiftRef} icon={Clock} title="משמרות זמינות">
+              <p className="text-gray-500 text-xs mb-3">בחר/בחרי את כל המשמרות שבהן יש משרות</p>
+              <div className="flex flex-wrap gap-2">
+                {shiftOptions.map((sft, i) => (
+                  <span key={sft} className={`inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-bold ${
+                    i % 2 === 0 ? "bg-brand-500 text-white shadow-lg shadow-brand-500/30" : "bg-gray-50 text-gray-400 border border-gray-200"
+                  }`}>{sft}{i % 2 === 0 && <Check size={12} className="mr-1" />}</span>
+                ))}
+              </div>
+            </MockSection>
+
+            {/* הטבות לעובד */}
+            <MockSection icon={Gift} title="הטבות לעובד">
+              <div className="flex flex-wrap gap-2">
+                {benefitOptions.map((b, i) => (
+                  <span key={b} className={`inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-bold ${
+                    i < 2 ? "bg-brand-500 text-white shadow-lg shadow-brand-500/30" : "bg-gray-50 text-gray-400 border border-gray-200"
+                  }`}>{b}{i < 2 && <Check size={12} className="mr-1" />}</span>
+                ))}
+              </div>
+            </MockSection>
+
+            {/* Actions card — team / screening / plans / logout */}
+            <div ref={setAccountRef} className="bg-white border border-gray-200 rounded-2xl divide-y divide-gray-100 overflow-hidden">
+              <ActionRow icon={Users} tint="purple" label="ניהול צוות" />
+              <ActionRow icon={HelpCircle} tint="blue" label="שאלון סינון" />
+              <ActionRow icon={CreditCard} tint="brand" label="תוכניות ומחירים" />
+              <ActionRow icon={LogOut} tint="red" label="התנתקות" danger />
+            </div>
           </div>
         </div>
+
+        {/* Sticky save bar (matches real app) */}
+        <div className="absolute bottom-[68px] inset-x-0 px-4 z-40">
+          <button ref={setSaveRef}
+            className="w-full bg-brand-500 text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-2xl shadow-brand-500/40">
+            שמור שינויים
+          </button>
+        </div>
+
         <BottomNav active="settings" settingsRef={navSetRef} />
         {cur && (
           <CoachOverlay targetRef={cur.ref} step={cur} index={coach} total={settingsSteps.length}
@@ -494,17 +558,44 @@ function Phone({ children }) {
   );
 }
 
-function SettingCard({ refEl, emoji, title, sub, right }) {
+function MockSection({ refEl, icon: Icon, title, children }) {
   return (
-    <div ref={refEl} className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-      <div className="flex items-center gap-3">
-        <div className="w-11 h-11 rounded-2xl bg-gray-100 flex items-center justify-center text-xl">{emoji}</div>
-        <div>
-          <p className="text-gray-900 font-bold text-sm">{title}</p>
-          <p className="text-gray-500 text-[11px] mt-0.5">{sub}</p>
-        </div>
+    <div ref={refEl} className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3 shadow-sm">
+      <div className="flex items-center gap-2 mb-1">
+        <Icon size={15} className="text-brand-400" />
+        <h3 className="text-gray-900 font-bold text-sm">{title}</h3>
       </div>
-      {right || <ChevronLeft size={18} className="text-gray-300" />}
+      {children}
+    </div>
+  );
+}
+
+function MockField({ label, value, ltr, chevron }) {
+  return (
+    <div>
+      <label className="text-gray-500 text-[11px] font-bold uppercase tracking-wide block mb-1.5">{label}</label>
+      <div className={`w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-3 text-gray-900 text-sm flex items-center justify-between ${ltr ? "flex-row-reverse" : ""}`}>
+        <span className={ltr ? "text-left w-full" : ""} dir={ltr ? "ltr" : "rtl"}>{value}</span>
+        {chevron && <span className="text-gray-400">›</span>}
+      </div>
+    </div>
+  );
+}
+
+const TINTS = {
+  purple: "bg-purple-500/15 text-purple-500",
+  blue:   "bg-blue-500/15 text-blue-500",
+  brand:  "bg-brand-500/15 text-brand-500",
+  red:    "bg-red-500/15 text-red-500",
+};
+function ActionRow({ icon: Icon, tint, label, danger }) {
+  return (
+    <div className="w-full px-4 py-3.5 flex items-center gap-3">
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${TINTS[tint]}`}>
+        <Icon size={16} />
+      </div>
+      <span className={`flex-1 text-right font-bold text-sm ${danger ? "text-red-500" : "text-gray-900"}`}>{label}</span>
+      {!danger && <span className="text-gray-300">›</span>}
     </div>
   );
 }
